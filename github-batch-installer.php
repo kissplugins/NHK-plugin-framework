@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: GitHub Batch Installer
+ * Plugin Name: KISS Smart Batch Installer - NHK Codex Edition
  * Plugin URI: https://github.com/sbi/github-batch-installer
  * Description: Batch install WordPress plugins from GitHub repositories.
  * Version: 1.0.0
