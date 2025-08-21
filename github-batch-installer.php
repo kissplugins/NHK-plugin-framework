@@ -23,8 +23,10 @@ defined( 'ABSPATH' ) || exit;
 const GBI_VERSION  = '1.0.0';
 const GBI_FILE     = __FILE__;
 const GBI_PATH     = __DIR__ . '/';
-const GBI_URL      = plugin_dir_url( __FILE__ );
-const GBI_BASENAME = plugin_basename( __FILE__ );
+
+// Plugin runtime values - set during initialization
+$GLOBALS['gbi_url'] = null;
+$GLOBALS['gbi_basename'] = null;
 
 // Load NHK Framework if available
 if ( ! class_exists( 'NHK\\Framework\\Container\\Container' ) ) {
@@ -63,6 +65,10 @@ spl_autoload_register( function ( $class ) {
  * Initialize the plugin.
  */
 function sbi_init() {
+    // Initialize plugin runtime values
+    $GLOBALS['gbi_url'] = plugin_dir_url( __FILE__ );
+    $GLOBALS['gbi_basename'] = plugin_basename( __FILE__ );
+
     try {
         $container = new SBI\Container();
         $container->singleton( SBI\Container::class, function () use ( $container ) {
@@ -117,4 +123,14 @@ function sbi_container() {
 function sbi_service( string $service ) {
     $container = sbi_container();
     return $container ? $container->get( $service ) : null;
+}
+
+/** Plugin URL helper */
+function gbi_url() {
+    return $GLOBALS['gbi_url'] ?? plugin_dir_url( __FILE__ );
+}
+
+/** Plugin basename helper */
+function gbi_basename() {
+    return $GLOBALS['gbi_basename'] ?? plugin_basename( __FILE__ );
 }
