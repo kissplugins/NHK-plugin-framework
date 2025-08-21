@@ -1,13 +1,13 @@
 {
-    "name": "nhk/event-manager",
-    "description": "Event management system built on NHK Framework - Reference Implementation",
+    "name": "sbi/github-batch-installer",
+    "description": "GitHub Batch Installer built on NHK Framework - Reference Implementation",
     "type": "wordpress-plugin",
     "license": "GPL-2.0-or-later",
     "version": "1.0.0",
     "authors": [
         {
-            "name": "NHK Framework Team",
-            "email": "dev@nhkframework.com"
+            "name": "SBI Development Team",
+            "email": "dev@sbi.local"
         }
     ],
     "require": {
@@ -22,13 +22,13 @@
     },
     "autoload": {
         "psr-4": {
-            "NHK\\EventManager\\": "src/",
+            "SBI\\": "src/",
             "NHK\\Framework\\": "framework/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "NHK\\EventManager\\Tests\\": "tests/"
+            "SBI\\Tests\\": "tests/"
         }
     },
     "scripts": {
