@@ -12,6 +12,8 @@ use SBI\Services\StateManager;
 use SBI\Services\PQSIntegration;
 use SBI\Services\GitHubService;
 use SBI\Services\PluginDetectionService;
+use SBI\Admin\RepositoryManager;
+use SBI\API\AjaxHandler;
 
 /**
  * Plugin class coordinating all components.
@@ -42,6 +44,24 @@ class Plugin extends BasePlugin {
             $this->container->singleton(StateManager::class, function($container) {
                 return new StateManager($container->get(PQSIntegration::class));
             });
+
+            // Register admin services
+            $this->container->singleton(RepositoryManager::class, function($container) {
+                return new RepositoryManager(
+                    $container->get(GitHubService::class),
+                    $container->get(PluginDetectionService::class),
+                    $container->get(StateManager::class)
+                );
+            });
+
+            // Register AJAX handler
+            $this->container->singleton(AjaxHandler::class, function($container) {
+                return new AjaxHandler(
+                    $container->get(GitHubService::class),
+                    $container->get(PluginDetectionService::class),
+                    $container->get(StateManager::class)
+                );
+            });
         } catch ( Exception $e ) {
             if ( WP_DEBUG_LOG ) {
                 error_log( '[SBI] Service registration failed: ' . $e->getMessage() );
@@ -55,6 +75,9 @@ class Plugin extends BasePlugin {
     protected function setup_hooks(): void {
         add_action('admin_menu', [ $this, 'register_admin_page' ]);
         add_filter('plugin_action_links_' . plugin_basename( GBI_FILE ), [ $this, 'add_settings_link' ]);
+
+        // Register AJAX hooks
+        add_action('init', [ $this, 'register_ajax_hooks' ]);
     }
 
     /**
@@ -86,12 +109,66 @@ class Plugin extends BasePlugin {
     }
 
     /**
+     * Register AJAX hooks.
+     */
+    public function register_ajax_hooks(): void {
+        try {
+            $ajax_handler = $this->container->get( AjaxHandler::class );
+            $ajax_handler->register_hooks();
+        } catch ( Exception $e ) {
+            if ( WP_DEBUG_LOG ) {
+                error_log( '[SBI] AJAX handler registration failed: ' . $e->getMessage() );
+            }
+        }
+    }
+
+    /**
      * Render admin page output.
      */
     public function render_admin_page(): void {
+        // Check if we should show the old welcome page or new repository manager
+        $show_welcome = isset( $_GET['welcome'] ) && $_GET['welcome'] === '1';
+
+        if ( $show_welcome ) {
+            $this->render_welcome_page();
+        } else {
+            $this->render_repository_manager();
+        }
+    }
+
+    /**
+     * Render the repository manager (main interface).
+     */
+    private function render_repository_manager(): void {
+        try {
+            $repository_manager = $this->container->get( RepositoryManager::class );
+            $repository_manager->render();
+        } catch ( Exception $e ) {
+            ?>
+            <div class="wrap">
+                <h1><?php esc_html_e( 'KISS Smart Batch Installer', 'kiss-smart-batch-installer' ); ?></h1>
+                <div class="notice notice-error">
+                    <p><?php printf( esc_html__( 'Error loading repository manager: %s', 'kiss-smart-batch-installer' ), esc_html( $e->getMessage() ) ); ?></p>
+                    <p><a href="<?php echo esc_url( add_query_arg( 'welcome', '1' ) ); ?>" class="button"><?php esc_html_e( 'View Welcome Page', 'kiss-smart-batch-installer' ); ?></a></p>
+                </div>
+            </div>
+            <?php
+        }
+    }
+
+    /**
+     * Render welcome page.
+     */
+    private function render_welcome_page(): void {
         ?>
         <div class="wrap">
             <h1><?php esc_html_e( 'KISS Smart Batch Installer', 'kiss-smart-batch-installer' ); ?></h1>
+
+            <div style="margin-bottom: 20px;">
+                <a href="<?php echo esc_url( remove_query_arg( 'welcome' ) ); ?>" class="button button-primary">
+                    <?php esc_html_e( '← Back to Repository Manager', 'kiss-smart-batch-installer' ); ?>
+                </a>
+            </div>
 
             <div class="notice notice-info">
                 <p>
@@ -101,7 +178,7 @@ class Plugin extends BasePlugin {
 
             <div class="card">
                 <h2><?php esc_html_e( 'Getting Started', 'kiss-smart-batch-installer' ); ?></h2>
-                <p><?php esc_html_e( 'To get started, you\'ll need to configure your GitHub organization settings.', 'kiss-smart-batch-installer' ); ?></p>
+                <p><?php esc_html_e( 'The main interface is now available! Use the Repository Manager to configure GitHub organizations and manage plugin installations.', 'kiss-smart-batch-installer' ); ?></p>
 
                 <h3><?php esc_html_e( 'Features', 'kiss-smart-batch-installer' ); ?></h3>
                 <ul>
@@ -118,15 +195,8 @@ class Plugin extends BasePlugin {
                     <li>✅ <?php esc_html_e( 'Plugin Detection Service - Ready for WordPress plugin header scanning', 'kiss-smart-batch-installer' ); ?></li>
                     <li>✅ <?php esc_html_e( 'State Manager - Ready for plugin installation status tracking', 'kiss-smart-batch-installer' ); ?></li>
                     <li>✅ <?php esc_html_e( 'PQS Integration - Ready for cache integration', 'kiss-smart-batch-installer' ); ?></li>
-                </ul>
-
-                <h3><?php esc_html_e( 'Next Steps', 'kiss-smart-batch-installer' ); ?></h3>
-                <p><?php esc_html_e( 'Core services are now implemented. Next development priorities:', 'kiss-smart-batch-installer' ); ?></p>
-                <ul>
-                    <li><?php esc_html_e( 'WordPress List Table interface for repository display', 'kiss-smart-batch-installer' ); ?></li>
-                    <li><?php esc_html_e( 'AJAX endpoints for frontend interactions', 'kiss-smart-batch-installer' ); ?></li>
-                    <li><?php esc_html_e( 'GitHub organization configuration settings', 'kiss-smart-batch-installer' ); ?></li>
-                    <li><?php esc_html_e( 'Batch installation functionality', 'kiss-smart-batch-installer' ); ?></li>
+                    <li>✅ <?php esc_html_e( 'WordPress List Table - Ready for repository display', 'kiss-smart-batch-installer' ); ?></li>
+                    <li>✅ <?php esc_html_e( 'AJAX API - Ready for frontend interactions', 'kiss-smart-batch-installer' ); ?></li>
                 </ul>
             </div>
 
