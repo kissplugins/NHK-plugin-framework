@@ -1,5 +1,80 @@
-# PROJECT-CLEANROOM.md
+# PROJECT-SBI.md
 # KISS Smart Batch Installer - Complete Cleanroom Rewrite
+Source of Truth: https://github.com/kissplugins/KISS-Smart-Batch-Installer/wiki/Clean-Room-Rebuild
+
+## 🎯 Current Status - FOUNDATION COMPLETE ✅
+
+### ✅ Completed (Phase 1 - Foundation)
+- **✅ Plugin Structure**: Modern PSR-4 autoloading with proper namespacing (`SBI\` namespace)
+- **✅ NHK Framework Integration**: Bundled framework with dependency injection container
+- **✅ WordPress Integration**: Plugin activation, admin menu, and core WordPress hooks
+- **✅ Plugin Naming**: Updated to "KISS Smart Batch Installer" throughout codebase
+- **✅ Settings Link**: Added "Settings" link to plugin row in WordPress "All Plugins" page
+- **✅ Admin Interface**: Basic admin page with welcome content and system information
+- **✅ Error Handling**: Proper error messages and framework loading validation
+- **✅ Text Domain**: Consistent `kiss-smart-batch-installer` text domain throughout
+- **✅ Architecture Planning**: Extensible design for public repos now, private repos later
+
+### ✅ Recently Completed
+- **✅ Repository Service**: GitHub public repository fetching via WordPress HTTP API
+- **✅ Plugin Detection**: WordPress plugin header scanning with caching
+- **✅ State Management**: Plugin installation status tracking with PQS integration
+- **✅ Menu Location**: Moved admin page to Plugins menu for better UX
+
+### � In Progress
+- **WordPress List Table**: Native-style plugin listing interface (next priority)
+- **AJAX API**: Modern REST-like endpoints for frontend interactions (next priority)
+
+### 📋 Next Steps
+1. Develop WordPress List Table interface for plugin display
+2. Add AJAX endpoints for frontend interactions
+3. Create settings page for GitHub organization configuration
+4. Implement batch installation functionality
+5. Add progress tracking and error handling for installations
+
+### 🔧 GitHub Integration Strategy
+- **Phase 1**: Public repositories only using WordPress built-in HTTP client
+- **Phase 2**: Extensible architecture for future private repository support
+- **Authentication**: No authentication required for public repos (GitHub API rate limits apply)
+- **Future**: Token-based authentication for private repositories (planned)
+
+---
+
+## 🔧 Technical Implementation Status
+
+### Core Plugin Files ✅
+- **`github-batch-installer.php`**: Main plugin file with WordPress headers, autoloading, and initialization
+- **`framework/autoload.php`**: PSR-4 autoloader for NHK Framework classes
+- **`src/Plugin.php`**: Main plugin class extending NHK Framework base plugin
+- **`src/Container.php`**: Dependency injection container extending NHK Framework container
+
+### Framework Integration ✅
+- **NHK Framework**: Fully bundled and integrated with proper autoloading
+- **Container System**: Dependency injection container for service management
+- **Plugin Lifecycle**: Activation, deactivation, and initialization hooks
+- **WordPress Hooks**: Admin menu, plugin action links, and admin notices
+
+### User Interface ✅
+- **Admin Menu**: "KISS Batch Installer" submenu under Plugins menu
+- **Settings Link**: Direct link from plugins page to admin interface
+- **Welcome Page**: Informative admin page with features, next steps, and system info
+- **Service Testing**: Live service testing with GitHub API rate limit display
+- **Error Handling**: Proper error messages for framework loading issues
+
+### Services Structure ✅
+- **`src/Services/GitHubService.php`**: GitHub public repository fetching with caching ✅
+- **`src/Services/PluginDetectionService.php`**: WordPress plugin header scanning ✅
+- **`src/Services/StateManager.php`**: Plugin state management with PQS integration ✅
+- **`src/Services/PQSIntegration.php`**: PQS cache integration ✅
+- **`src/Enums/PluginState.php`**: Plugin state enumeration ✅
+
+### Text Domain & Naming ✅
+- **Plugin Name**: "KISS Smart Batch Installer"
+- **Text Domain**: `kiss-smart-batch-installer` (consistent throughout)
+- **Menu Slug**: `kiss-smart-batch-installer`
+- **Capability**: `install_plugins` (appropriate for plugin installation)
+
+---
 
 ## Executive Summary
 
@@ -7,16 +82,17 @@ Build a WordPress plugin from scratch that enables batch installation of WordPre
 
 ## High-Level Implementation Checklist
 
-### Phase 1: Foundation Architecture (Week 1)
-- [ ] **PSR-4 Plugin Structure**: Set up modern autoloading with proper namespace
-- [ ] **Dependency Injection Container**: Central service management
-- [ ] **WordPress Integration Layer**: Admin pages, hooks, and core WordPress functionality
-- [ ] **State Management System**: Central arbiter for all plugin states
-- [ ] **PQS Cache Integration**: Read-only integration with existing PQS localStorage cache
+### Phase 1: Foundation Architecture (Week 1) ✅ COMPLETE
+- [x] **PSR-4 Plugin Structure**: Set up modern autoloading with proper namespace
+- [x] **Dependency Injection Container**: Central service management
+- [x] **WordPress Integration Layer**: Admin pages, hooks, and core WordPress functionality
+- [x] **State Management System**: Central arbiter for all plugin states with caching
+- [x] **PQS Cache Integration**: Read-only integration with existing PQS localStorage cache
+- [x] **All Plugins: Settings Link**: Add "Settings" link to plugin row in "All Plugins" page
 
-### Phase 2: Core Functionality (Week 2)
-- [ ] **GitHub Repository Service**: Scrape and cache GitHub org repositories
-- [ ] **Plugin Detection Service**: Identify WordPress plugins in repositories
+### Phase 2: Core Functionality (Week 2) 🚧 IN PROGRESS
+- [x] **GitHub Public Repository Service**: Fetch and cache public GitHub org repositories using WordPress HTTP API
+- [x] **Plugin Detection Service**: Identify WordPress plugins in repositories via header scanning
 - [ ] **Installation Service**: Install plugins using WordPress core upgrader
 - [ ] **WordPress List Table**: Native-style plugin listing interface
 - [ ] **AJAX API**: Modern REST-like endpoints for frontend interactions
@@ -194,19 +270,26 @@ interface StateManagerInterface
 
 ### FR-1: Repository Management
 
-**Requirement**: Fetch and display GitHub organization repositories
+**Requirement**: Fetch and display GitHub organization public repositories
 
 **Acceptance Criteria**:
 - [ ] User can configure GitHub organization name in settings
-- [ ] System fetches top 50 most recently updated repositories 
+- [ ] System fetches top 50 most recently updated **public** repositories
 - [ ] Repository data is cached for 1 hour to minimize API calls
 - [ ] Manual refresh option bypasses cache
-- [ ] Handle GitHub API rate limiting gracefully
+- [ ] Handle GitHub API rate limiting gracefully (5000 requests/hour for unauthenticated)
+- [ ] Extensible architecture for future private repository support
 
 **Implementation Notes**:
-- Use WordPress HTTP API for GitHub requests
+- Use WordPress HTTP API (`wp_remote_get()`) for GitHub public API requests
+- No authentication required for public repositories
 - Implement exponential backoff for rate limiting
 - Cache using WordPress transients for consistency
+- Design service interface to support future authentication methods
+
+**GitHub API Endpoints**:
+- Public repos: `https://api.github.com/orgs/{org}/repos?type=public&sort=updated&per_page=50`
+- Rate limit check: `https://api.github.com/rate_limit` (optional)
 
 ### FR-2: Plugin Detection
 
@@ -335,6 +418,34 @@ function readPQSCache() {
 - Invalidate local state when PQS cache changes
 - Fallback to WordPress plugin registry when PQS unavailable
 
+### WordPress HTTP API Integration
+
+**Public Repository Fetching**:
+```php
+// Example implementation using WordPress HTTP API
+$response = wp_remote_get( 'https://api.github.com/orgs/example/repos', [
+    'timeout' => 15,
+    'headers' => [
+        'User-Agent' => 'KISS-Smart-Batch-Installer/1.0.0',
+        'Accept' => 'application/vnd.github.v3+json'
+    ]
+] );
+
+if ( is_wp_error( $response ) ) {
+    // Handle WordPress HTTP API errors
+    return new WP_Error( 'github_request_failed', $response->get_error_message() );
+}
+
+$body = wp_remote_retrieve_body( $response );
+$data = json_decode( $body, true );
+```
+
+**Error Handling Strategy**:
+- Use WordPress `WP_Error` objects for consistent error handling
+- Implement retry logic with exponential backoff
+- Cache successful responses to minimize API calls
+- Graceful degradation when GitHub API is unavailable
+
 ### WordPress Core Integration
 
 **Hook Integration Points**:
@@ -392,6 +503,62 @@ function readPQSCache() {
 - [ ] Validate plugin archives before extraction
 - [ ] Implement source verification for GitHub downloads
 - [ ] Prevent path traversal attacks during installation
+
+---
+
+## GitHub Integration Architecture
+
+### Public Repository Access (Phase 1) 🎯 Current Focus
+
+**Strategy**: Use WordPress built-in HTTP client for public GitHub repositories
+
+**Benefits**:
+- ✅ No authentication setup required
+- ✅ Uses WordPress native `wp_remote_get()` functions
+- ✅ Leverages WordPress HTTP API error handling
+- ✅ No external dependencies or API keys needed
+- ✅ 5000 requests/hour rate limit (sufficient for most use cases)
+
+**Limitations**:
+- ❌ Public repositories only
+- ❌ Lower rate limits compared to authenticated requests
+- ❌ No access to private organization repositories
+
+### Private Repository Support (Phase 2) 🔮 Future Enhancement
+
+**Strategy**: Extensible service architecture for authenticated GitHub access
+
+**Implementation Approach**:
+```php
+interface GitHubServiceInterface {
+    public function getRepositories(string $organization): array;
+    public function getRepository(string $owner, string $repo): array;
+    public function getRateLimit(): array;
+}
+
+class PublicGitHubService implements GitHubServiceInterface {
+    // Current implementation using wp_remote_get()
+}
+
+class AuthenticatedGitHubService implements GitHubServiceInterface {
+    // Future implementation with token authentication
+}
+```
+
+**Future Features**:
+- 🔐 Personal Access Token (PAT) authentication
+- 🏢 GitHub App authentication for organizations
+- 📈 Higher rate limits (5000+ requests/hour)
+- 🔒 Access to private repositories
+- 👥 Team-specific repository filtering
+
+### Service Architecture Design
+
+**Extensible Repository Service**:
+- Interface-based design for multiple GitHub access methods
+- Configuration-driven service selection (public vs authenticated)
+- Consistent caching layer regardless of authentication method
+- Graceful fallback from authenticated to public access
 
 ---
 

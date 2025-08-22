@@ -1,6 +1,6 @@
 {
-    "name": "sbi/github-batch-installer",
-    "description": "GitHub Batch Installer built on NHK Framework - Reference Implementation",
+    "name": "sbi/kiss-smart-batch-installer",
+    "description": "KISS Smart Batch Installer - WordPress plugin batch installer from GitHub repositories built on NHK Framework",
     "type": "wordpress-plugin",
     "license": "GPL-2.0-or-later",
     "version": "1.0.0",

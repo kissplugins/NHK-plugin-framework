@@ -1,14 +1,14 @@
 <?php
 /**
- * Plugin Name: KISS Smart Batch Installer - NHK Codex Edition
- * Plugin URI: https://github.com/sbi/github-batch-installer
- * Description: Batch install WordPress plugins from GitHub repositories.
+ * Plugin Name: KISS Smart Batch Installer
+ * Plugin URI: https://github.com/sbi/kiss-smart-batch-installer
+ * Description: KISS (Keep It Simple, Stupid) batch installer for WordPress plugins from GitHub repositories with smart detection and PQS integration.
  * Version: 1.0.0
  * Author: SBI Development Team
  * Author URI: https://sbi.local
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
- * Text Domain: github-batch-installer
+ * Text Domain: kiss-smart-batch-installer
  * Domain Path: /languages
  * Requires at least: 6.0
  * Requires PHP: 8.0
@@ -36,7 +36,7 @@ if ( ! class_exists( 'NHK\\Framework\\Container\\Container' ) ) {
     } else {
         add_action( 'admin_notices', function () {
             echo '<div class="notice notice-error"><p>';
-            echo esc_html__( 'GitHub Batch Installer requires the NHK Framework to function properly.', 'github-batch-installer' );
+            echo esc_html__( 'KISS Smart Batch Installer requires the NHK Framework to function properly.', 'kiss-smart-batch-installer' );
             echo '</p></div>';
         } );
         return;
@@ -85,7 +85,7 @@ function sbi_init() {
         }
         add_action( 'admin_notices', function () use ( $e ) {
             echo '<div class="notice notice-error"><p>';
-            echo esc_html( sprintf( __( 'GitHub Batch Installer failed to initialize: %s', 'github-batch-installer' ), $e->getMessage() ) );
+            echo esc_html( sprintf( __( 'KISS Smart Batch Installer failed to initialize: %s', 'kiss-smart-batch-installer' ), $e->getMessage() ) );
             echo '</p></div>';
         } );
     }
