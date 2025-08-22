@@ -333,25 +333,36 @@ class RepositoryListTable extends WP_List_Table {
         
         $actions = [];
         
+        // Extract owner from full_name (owner/repo)
+        $owner = '';
+        if ( isset( $item['full_name'] ) && strpos( $item['full_name'], '/' ) !== false ) {
+            $owner = explode( '/', $item['full_name'] )[0];
+        }
+
         switch ( $state ) {
             case PluginState::AVAILABLE:
                 $actions[] = sprintf(
-                    '<button type="button" class="button button-primary sbi-install-plugin" data-repo="%s">%s</button>',
+                    '<button type="button" class="button button-primary sbi-install-plugin" data-repo="%s" data-owner="%s">%s</button>',
                     esc_attr( $repo_name ),
+                    esc_attr( $owner ),
                     esc_html__( 'Install', 'kiss-smart-batch-installer' )
                 );
                 break;
             case PluginState::INSTALLED_INACTIVE:
                 $actions[] = sprintf(
-                    '<button type="button" class="button button-secondary sbi-activate-plugin" data-repo="%s">%s</button>',
+                    '<button type="button" class="button button-secondary sbi-activate-plugin" data-repo="%s" data-owner="%s" data-plugin-file="%s">%s</button>',
                     esc_attr( $repo_name ),
+                    esc_attr( $owner ),
+                    esc_attr( $item['plugin_file'] ?? '' ),
                     esc_html__( 'Activate', 'kiss-smart-batch-installer' )
                 );
                 break;
             case PluginState::INSTALLED_ACTIVE:
                 $actions[] = sprintf(
-                    '<button type="button" class="button button-secondary sbi-deactivate-plugin" data-repo="%s">%s</button>',
+                    '<button type="button" class="button button-secondary sbi-deactivate-plugin" data-repo="%s" data-owner="%s" data-plugin-file="%s">%s</button>',
                     esc_attr( $repo_name ),
+                    esc_attr( $owner ),
+                    esc_attr( $item['plugin_file'] ?? '' ),
                     esc_html__( 'Deactivate', 'kiss-smart-batch-installer' )
                 );
                 break;

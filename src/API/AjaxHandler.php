@@ -10,6 +10,7 @@ namespace SBI\API;
 use WP_Error;
 use SBI\Services\GitHubService;
 use SBI\Services\PluginDetectionService;
+use SBI\Services\PluginInstallationService;
 use SBI\Services\StateManager;
 
 /**
@@ -32,6 +33,13 @@ class AjaxHandler {
     private PluginDetectionService $detection_service;
 
     /**
+     * Plugin installation service.
+     *
+     * @var PluginInstallationService
+     */
+    private PluginInstallationService $installation_service;
+
+    /**
      * State manager.
      *
      * @var StateManager
@@ -41,17 +49,20 @@ class AjaxHandler {
     /**
      * Constructor.
      *
-     * @param GitHubService           $github_service    GitHub service.
-     * @param PluginDetectionService  $detection_service Plugin detection service.
-     * @param StateManager           $state_manager     State manager.
+     * @param GitHubService              $github_service       GitHub service.
+     * @param PluginDetectionService     $detection_service    Plugin detection service.
+     * @param PluginInstallationService  $installation_service Plugin installation service.
+     * @param StateManager              $state_manager        State manager.
      */
-    public function __construct( 
-        GitHubService $github_service, 
-        PluginDetectionService $detection_service, 
-        StateManager $state_manager 
+    public function __construct(
+        GitHubService $github_service,
+        PluginDetectionService $detection_service,
+        PluginInstallationService $installation_service,
+        StateManager $state_manager
     ) {
         $this->github_service = $github_service;
         $this->detection_service = $detection_service;
+        $this->installation_service = $installation_service;
         $this->state_manager = $state_manager;
     }
 
@@ -149,23 +160,40 @@ class AjaxHandler {
      */
     public function install_plugin(): void {
         $this->verify_nonce_and_capability();
-        
+
         $repo_name = sanitize_text_field( $_POST['repository'] ?? '' );
-        
+        $owner = sanitize_text_field( $_POST['owner'] ?? '' );
+        $activate = (bool) ( $_POST['activate'] ?? false );
+
         if ( empty( $repo_name ) ) {
             wp_send_json_error( [
                 'message' => __( 'Repository name is required.', 'kiss-smart-batch-installer' )
             ] );
         }
-        
-        // TODO: Implement actual plugin installation
-        // For now, simulate installation
-        sleep( 2 ); // Simulate installation time
-        
-        wp_send_json_success( [
-            'message' => sprintf( __( 'Plugin %s installed successfully.', 'kiss-smart-batch-installer' ), $repo_name ),
+
+        if ( empty( $owner ) ) {
+            wp_send_json_error( [
+                'message' => __( 'Repository owner is required.', 'kiss-smart-batch-installer' )
+            ] );
+        }
+
+        // Install the plugin
+        $result = $this->installation_service->install_and_activate( $owner, $repo_name, $activate );
+
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( [
+                'message' => $result->get_error_message(),
+                'repository' => $repo_name,
+            ] );
+        }
+
+        wp_send_json_success( array_merge( $result, [
+            'message' => sprintf(
+                __( 'Plugin %s installed successfully.', 'kiss-smart-batch-installer' ),
+                $repo_name
+            ),
             'repository' => $repo_name,
-        ] );
+        ] ) );
     }
 
     /**
@@ -173,22 +201,29 @@ class AjaxHandler {
      */
     public function activate_plugin(): void {
         $this->verify_nonce_and_capability();
-        
+
+        $plugin_file = sanitize_text_field( $_POST['plugin_file'] ?? '' );
         $repo_name = sanitize_text_field( $_POST['repository'] ?? '' );
-        
-        if ( empty( $repo_name ) ) {
+
+        if ( empty( $plugin_file ) ) {
             wp_send_json_error( [
-                'message' => __( 'Repository name is required.', 'kiss-smart-batch-installer' )
+                'message' => __( 'Plugin file is required.', 'kiss-smart-batch-installer' )
             ] );
         }
-        
-        // TODO: Implement actual plugin activation
-        // For now, simulate activation
-        
-        wp_send_json_success( [
-            'message' => sprintf( __( 'Plugin %s activated successfully.', 'kiss-smart-batch-installer' ), $repo_name ),
+
+        // Activate the plugin
+        $result = $this->installation_service->activate_plugin( $plugin_file );
+
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( [
+                'message' => $result->get_error_message(),
+                'repository' => $repo_name,
+            ] );
+        }
+
+        wp_send_json_success( array_merge( $result, [
             'repository' => $repo_name,
-        ] );
+        ] ) );
     }
 
     /**
@@ -196,22 +231,29 @@ class AjaxHandler {
      */
     public function deactivate_plugin(): void {
         $this->verify_nonce_and_capability();
-        
+
+        $plugin_file = sanitize_text_field( $_POST['plugin_file'] ?? '' );
         $repo_name = sanitize_text_field( $_POST['repository'] ?? '' );
-        
-        if ( empty( $repo_name ) ) {
+
+        if ( empty( $plugin_file ) ) {
             wp_send_json_error( [
-                'message' => __( 'Repository name is required.', 'kiss-smart-batch-installer' )
+                'message' => __( 'Plugin file is required.', 'kiss-smart-batch-installer' )
             ] );
         }
-        
-        // TODO: Implement actual plugin deactivation
-        // For now, simulate deactivation
-        
-        wp_send_json_success( [
-            'message' => sprintf( __( 'Plugin %s deactivated successfully.', 'kiss-smart-batch-installer' ), $repo_name ),
+
+        // Deactivate the plugin
+        $result = $this->installation_service->deactivate_plugin( $plugin_file );
+
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( [
+                'message' => $result->get_error_message(),
+                'repository' => $repo_name,
+            ] );
+        }
+
+        wp_send_json_success( array_merge( $result, [
             'repository' => $repo_name,
-        ] );
+        ] ) );
     }
 
     /**
@@ -221,30 +263,51 @@ class AjaxHandler {
         $this->verify_nonce_and_capability();
         
         $repositories = $_POST['repositories'] ?? [];
-        
+        $activate = (bool) ( $_POST['activate'] ?? false );
+
         if ( empty( $repositories ) || ! is_array( $repositories ) ) {
             wp_send_json_error( [
                 'message' => __( 'No repositories selected.', 'kiss-smart-batch-installer' )
             ] );
         }
-        
-        $results = [];
-        foreach ( $repositories as $repo_name ) {
-            $repo_name = sanitize_text_field( $repo_name );
-            
-            // TODO: Implement actual batch installation
-            // For now, simulate installation
-            $results[] = [
-                'repository' => $repo_name,
-                'success' => true,
-                'message' => sprintf( __( 'Plugin %s installed successfully.', 'kiss-smart-batch-installer' ), $repo_name ),
+
+        // Validate and sanitize repository data
+        $repo_data = [];
+        foreach ( $repositories as $repo ) {
+            if ( ! is_array( $repo ) || empty( $repo['owner'] ) || empty( $repo['repo'] ) ) {
+                continue;
+            }
+
+            $repo_data[] = [
+                'owner' => sanitize_text_field( $repo['owner'] ),
+                'repo' => sanitize_text_field( $repo['repo'] ),
+                'branch' => sanitize_text_field( $repo['branch'] ?? 'main' ),
             ];
         }
-        
+
+        if ( empty( $repo_data ) ) {
+            wp_send_json_error( [
+                'message' => __( 'No valid repositories provided.', 'kiss-smart-batch-installer' )
+            ] );
+        }
+
+        // Perform batch installation
+        $results = $this->installation_service->batch_install( $repo_data, $activate );
+
+        // Count successful installations
+        $success_count = count( array_filter( $results, function( $result ) {
+            return $result['success'] ?? false;
+        } ) );
+
         wp_send_json_success( [
+            'message' => sprintf(
+                __( 'Successfully processed %d of %d plugins.', 'kiss-smart-batch-installer' ),
+                $success_count,
+                count( $results )
+            ),
             'results' => $results,
-            'total' => count( $results ),
-            'successful' => count( array_filter( $results, fn( $r ) => $r['success'] ) ),
+            'success_count' => $success_count,
+            'total_count' => count( $results ),
         ] );
     }
 
@@ -254,25 +317,38 @@ class AjaxHandler {
     public function batch_activate(): void {
         $this->verify_nonce_and_capability();
         
-        $repositories = $_POST['repositories'] ?? [];
-        
-        if ( empty( $repositories ) || ! is_array( $repositories ) ) {
+        $plugin_files = $_POST['plugin_files'] ?? [];
+
+        if ( empty( $plugin_files ) || ! is_array( $plugin_files ) ) {
             wp_send_json_error( [
-                'message' => __( 'No repositories selected.', 'kiss-smart-batch-installer' )
+                'message' => __( 'No plugin files provided.', 'kiss-smart-batch-installer' )
             ] );
         }
-        
+
         $results = [];
-        foreach ( $repositories as $repo_name ) {
-            $repo_name = sanitize_text_field( $repo_name );
-            
-            // TODO: Implement actual batch activation
-            // For now, simulate activation
-            $results[] = [
-                'repository' => $repo_name,
-                'success' => true,
-                'message' => sprintf( __( 'Plugin %s activated successfully.', 'kiss-smart-batch-installer' ), $repo_name ),
-            ];
+        foreach ( $plugin_files as $plugin_data ) {
+            if ( ! is_array( $plugin_data ) || empty( $plugin_data['plugin_file'] ) ) {
+                continue;
+            }
+
+            $plugin_file = sanitize_text_field( $plugin_data['plugin_file'] );
+            $repo_name = sanitize_text_field( $plugin_data['repository'] ?? '' );
+
+            $result = $this->installation_service->activate_plugin( $plugin_file );
+
+            if ( is_wp_error( $result ) ) {
+                $results[] = [
+                    'repository' => $repo_name,
+                    'plugin_file' => $plugin_file,
+                    'success' => false,
+                    'error' => $result->get_error_message(),
+                ];
+            } else {
+                $results[] = array_merge( $result, [
+                    'repository' => $repo_name,
+                    'success' => true,
+                ] );
+            }
         }
         
         wp_send_json_success( [

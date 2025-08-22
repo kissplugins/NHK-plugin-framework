@@ -100,7 +100,8 @@ class RepositoryManager {
                 </div>
             <?php endif; ?>
         </div>
-        
+
+        <?php $this->render_styles(); ?>
         <?php $this->render_scripts(); ?>
         <?php
     }
@@ -168,26 +169,26 @@ class RepositoryManager {
      */
     private function render_organization_form( string $organization ): void {
         ?>
-        <div class="card" style="margin-bottom: 20px;">
-            <h2><?php esc_html_e( 'GitHub Organization Settings', 'kiss-smart-batch-installer' ); ?></h2>
-            
+        <div class="sbi-organization-settings" style="background: #fff; border: 1px solid #c3c4c7; box-shadow: 0 1px 1px rgba(0,0,0,.04); padding: 20px; margin-bottom: 20px; width: 100%; box-sizing: border-box;">
+            <h2 style="margin-top: 0;"><?php esc_html_e( 'GitHub Organization Settings', 'kiss-smart-batch-installer' ); ?></h2>
+
             <?php settings_errors( 'sbi_messages' ); ?>
-            
+
             <form method="post" action="">
                 <?php wp_nonce_field( 'sbi_admin_action', 'sbi_nonce' ); ?>
                 <input type="hidden" name="sbi_action" value="save_organization">
-                
-                <table class="form-table">
+
+                <table class="form-table" style="width: 100%;">
                     <tr>
-                        <th scope="row">
+                        <th scope="row" style="width: 200px;">
                             <label for="github_organization"><?php esc_html_e( 'GitHub Organization', 'kiss-smart-batch-installer' ); ?></label>
                         </th>
                         <td>
-                            <input type="text" 
-                                   id="github_organization" 
-                                   name="github_organization" 
-                                   value="<?php echo esc_attr( $organization ); ?>" 
-                                   class="regular-text" 
+                            <input type="text"
+                                   id="github_organization"
+                                   name="github_organization"
+                                   value="<?php echo esc_attr( $organization ); ?>"
+                                   class="regular-text"
                                    placeholder="<?php esc_attr_e( 'e.g., wordpress, facebook, google', 'kiss-smart-batch-installer' ); ?>" />
                             <p class="description">
                                 <?php esc_html_e( 'Enter the GitHub organization name to fetch public repositories from.', 'kiss-smart-batch-installer' ); ?>
@@ -195,13 +196,13 @@ class RepositoryManager {
                         </td>
                     </tr>
                 </table>
-                
+
                 <p class="submit">
                     <input type="submit" name="submit" id="submit" class="button button-primary" value="<?php esc_attr_e( 'Save Organization', 'kiss-smart-batch-installer' ); ?>">
-                    
+
                     <?php if ( ! empty( $organization ) ): ?>
-                        <input type="submit" name="sbi_action" value="refresh_repositories" class="button button-secondary" 
-                               onclick="this.form.elements['sbi_action'].value='refresh_repositories';" 
+                        <input type="submit" name="sbi_action" value="refresh_repositories" class="button button-secondary"
+                               onclick="this.form.elements['sbi_action'].value='refresh_repositories';"
                                style="margin-left: 10px;"
                                value="<?php esc_attr_e( 'Refresh Cache', 'kiss-smart-batch-installer' ); ?>">
                     <?php endif; ?>
@@ -217,21 +218,98 @@ class RepositoryManager {
     private function render_repository_list(): void {
         $organization = get_option( 'sbi_github_organization', '' );
         ?>
-        <div class="card">
-            <h2>
-                <?php 
-                printf( 
-                    esc_html__( 'Repositories from %s', 'kiss-smart-batch-installer' ), 
-                    '<strong>' . esc_html( $organization ) . '</strong>' 
-                ); 
+        <div class="sbi-repository-list" style="background: #fff; border: 1px solid #c3c4c7; box-shadow: 0 1px 1px rgba(0,0,0,.04); padding: 20px; width: 100%; box-sizing: border-box;">
+            <h2 style="margin-top: 0;">
+                <?php
+                printf(
+                    esc_html__( 'Repositories from %s', 'kiss-smart-batch-installer' ),
+                    '<strong>' . esc_html( $organization ) . '</strong>'
+                );
                 ?>
             </h2>
-            
+
             <form method="post" id="sbi-repository-form">
                 <?php wp_nonce_field( 'sbi_bulk_action', 'sbi_bulk_nonce' ); ?>
-                <?php $this->list_table->display(); ?>
+                <div style="width: 100%; overflow-x: auto;">
+                    <?php $this->list_table->display(); ?>
+                </div>
             </form>
         </div>
+        <?php
+    }
+
+    /**
+     * Render CSS styles for full-width layout.
+     */
+    private function render_styles(): void {
+        ?>
+        <style type="text/css">
+        /* Full-width layout for SBI components */
+        .sbi-organization-settings,
+        .sbi-repository-list {
+            max-width: none !important;
+        }
+
+        /* Ensure table uses full width */
+        .sbi-repository-list .wp-list-table {
+            width: 100% !important;
+            table-layout: auto;
+        }
+
+        /* Responsive table wrapper */
+        .sbi-repository-list .tablenav {
+            width: 100%;
+        }
+
+        /* Adjust column widths for better distribution */
+        .sbi-repository-list .wp-list-table th,
+        .sbi-repository-list .wp-list-table td {
+            padding: 12px 8px;
+        }
+
+        /* Repository name column - allow more space */
+        .sbi-repository-list .wp-list-table .column-name {
+            width: 25%;
+            min-width: 200px;
+        }
+
+        /* Description column - flexible width */
+        .sbi-repository-list .wp-list-table .column-description {
+            width: 35%;
+            min-width: 250px;
+        }
+
+        /* Status column - fixed width */
+        .sbi-repository-list .wp-list-table .column-status {
+            width: 15%;
+            min-width: 120px;
+        }
+
+        /* Actions column - fixed width */
+        .sbi-repository-list .wp-list-table .column-actions {
+            width: 25%;
+            min-width: 200px;
+        }
+
+        /* Responsive adjustments */
+        @media screen and (max-width: 1200px) {
+            .sbi-repository-list .wp-list-table .column-description {
+                width: 30%;
+            }
+            .sbi-repository-list .wp-list-table .column-actions {
+                width: 30%;
+            }
+        }
+
+        @media screen and (max-width: 900px) {
+            .sbi-repository-list {
+                overflow-x: auto;
+            }
+            .sbi-repository-list .wp-list-table {
+                min-width: 800px;
+            }
+        }
+        </style>
         <?php
     }
 
@@ -249,12 +327,15 @@ class RepositoryManager {
             $(document).on('click', '.sbi-install-plugin', function() {
                 var button = $(this);
                 var repo = button.data('repo');
-                
+                var owner = button.data('owner');
+
                 button.prop('disabled', true).text('<?php esc_html_e( 'Installing...', 'kiss-smart-batch-installer' ); ?>');
-                
+
                 $.post(ajaxurl, {
                     action: 'sbi_install_plugin',
                     repository: repo,
+                    owner: owner,
+                    activate: false,
                     nonce: ajaxNonce
                 }, function(response) {
                     if (response.success) {
@@ -272,12 +353,14 @@ class RepositoryManager {
             $(document).on('click', '.sbi-activate-plugin', function() {
                 var button = $(this);
                 var repo = button.data('repo');
-                
+                var pluginFile = button.data('plugin-file');
+
                 button.prop('disabled', true).text('<?php esc_html_e( 'Activating...', 'kiss-smart-batch-installer' ); ?>');
-                
+
                 $.post(ajaxurl, {
                     action: 'sbi_activate_plugin',
                     repository: repo,
+                    plugin_file: pluginFile,
                     nonce: ajaxNonce
                 }, function(response) {
                     if (response.success) {
@@ -290,7 +373,32 @@ class RepositoryManager {
                     }
                 });
             });
-            
+
+            // Deactivate plugin button
+            $(document).on('click', '.sbi-deactivate-plugin', function() {
+                var button = $(this);
+                var repo = button.data('repo');
+                var pluginFile = button.data('plugin-file');
+
+                button.prop('disabled', true).text('<?php esc_html_e( 'Deactivating...', 'kiss-smart-batch-installer' ); ?>');
+
+                $.post(ajaxurl, {
+                    action: 'sbi_deactivate_plugin',
+                    repository: repo,
+                    plugin_file: pluginFile,
+                    nonce: ajaxNonce
+                }, function(response) {
+                    if (response.success) {
+                        button.text('<?php esc_html_e( 'Deactivated', 'kiss-smart-batch-installer' ); ?>').removeClass('button-secondary').addClass('button-primary');
+                        // Refresh the page to update status
+                        location.reload();
+                    } else {
+                        alert(response.data.message);
+                        button.prop('disabled', false).text('<?php esc_html_e( 'Deactivate', 'kiss-smart-batch-installer' ); ?>');
+                    }
+                });
+            });
+
             // Refresh status button
             $(document).on('click', '.sbi-refresh-status', function() {
                 var button = $(this);

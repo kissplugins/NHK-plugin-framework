@@ -102,10 +102,14 @@ Build a WordPress plugin from scratch that enables batch installation of WordPre
 - [x] **Plugin Detection Service**: Identify WordPress plugins in repositories via header scanning
 - [x] **WordPress List Table**: Native-style plugin listing interface with sorting and pagination
 - [x] **AJAX API**: Modern REST-like endpoints for frontend interactions
-- [ ] **Installation Service**: Install plugins using WordPress core upgrader (moved to Phase 3)
+- [x] **Installation Service**: Install plugins using WordPress core upgrader
 
-### Phase 3: User Interface (Week 3)
-- [ ] **Modern Frontend**: Clean JavaScript with proper state management
+### Phase 3: User Interface (Week 3) 🚧 IN PROGRESS
+- [x] **Plugin Installation Service**: WordPress core upgrader integration with GitHub ZIP downloads
+- [x] **Individual Plugin Actions**: Install, activate, and deactivate single plugins via AJAX
+- [x] **GitHub User/Organization Detection**: Automatic detection of account type for API calls
+- [x] **Enhanced Plugin State Management**: Track installation status with plugin file detection
+- [x] **Modern Frontend**: Clean JavaScript with proper state management for plugin actions
 - [ ] **Bulk Operations**: Multi-select installation with progress tracking
 - [ ] **Error Handling**: Graceful error states and user feedback
 - [ ] **Settings Integration**: Simple configuration interface
@@ -335,17 +339,24 @@ interface StateManagerInterface
 **Requirement**: Install multiple plugins simultaneously with progress tracking
 
 **Acceptance Criteria**:
+- [x] Install individual plugins from GitHub repositories
+- [x] Use WordPress core `Plugin_Upgrader` for safe installation
+- [x] Support both GitHub users and organizations
+- [x] Activate/deactivate plugins after installation
+- [x] Handle installation failures gracefully with error messages
+- [x] Update UI states after successful operations
 - [ ] Select multiple repositories via checkboxes
 - [ ] Install plugins sequentially to avoid conflicts
 - [ ] Show real-time progress for each plugin
-- [ ] Option to activate plugins after installation
-- [ ] Handle installation failures gracefully
-- [ ] Update UI states after successful installations
+- [ ] Batch installation with progress tracking
 
 **Implementation Notes**:
-- Use WordPress `Plugin_Upgrader` for installations
-- Implement queue system for sequential processing
-- Provide detailed error messages for failures
+- ✅ WordPress `Plugin_Upgrader` integration complete
+- ✅ GitHub ZIP download from repository branches
+- ✅ Custom upgrader skin for message capture
+- ✅ Permission checks for install/activate capabilities
+- [ ] Queue system for sequential batch processing
+- [ ] Progress tracking for multiple installations
 
 ### FR-5: WordPress Native UI
 
@@ -452,6 +463,13 @@ $data = json_decode( $body, true );
 - Implement retry logic with exponential backoff
 - Cache successful responses to minimize API calls
 - Graceful degradation when GitHub API is unavailable
+
+**GitHub API Integration**:
+- ✅ Automatic detection of GitHub users vs organizations
+- ✅ Proper API endpoint selection (`/users/` vs `/orgs/`)
+- ✅ Fixed query parameter handling for GET requests
+- ✅ Comprehensive error logging for debugging
+- ✅ Support for public repositories from both account types
 
 ### WordPress Core Integration
 

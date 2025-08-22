@@ -12,6 +12,7 @@ use SBI\Services\StateManager;
 use SBI\Services\PQSIntegration;
 use SBI\Services\GitHubService;
 use SBI\Services\PluginDetectionService;
+use SBI\Services\PluginInstallationService;
 use SBI\Admin\RepositoryManager;
 use SBI\API\AjaxHandler;
 
@@ -40,6 +41,11 @@ class Plugin extends BasePlugin {
             $this->container->singleton(GitHubService::class);
             $this->container->singleton(PluginDetectionService::class);
 
+            // Register PluginInstallationService with GitHubService dependency
+            $this->container->singleton(PluginInstallationService::class, function($container) {
+                return new PluginInstallationService($container->get(GitHubService::class));
+            });
+
             // Register StateManager with PQSIntegration dependency
             $this->container->singleton(StateManager::class, function($container) {
                 return new StateManager($container->get(PQSIntegration::class));
@@ -54,11 +60,12 @@ class Plugin extends BasePlugin {
                 );
             });
 
-            // Register AJAX handler
+            // Register AJAX handler with all dependencies
             $this->container->singleton(AjaxHandler::class, function($container) {
                 return new AjaxHandler(
                     $container->get(GitHubService::class),
                     $container->get(PluginDetectionService::class),
+                    $container->get(PluginInstallationService::class),
                     $container->get(StateManager::class)
                 );
             });
