@@ -83,6 +83,9 @@ class AjaxHandler {
         add_action( 'wp_ajax_sbi_batch_install', [ $this, 'batch_install' ] );
         add_action( 'wp_ajax_sbi_batch_activate', [ $this, 'batch_activate' ] );
         add_action( 'wp_ajax_sbi_batch_deactivate', [ $this, 'batch_deactivate' ] );
+
+        // Debug action (temporary)
+        add_action( 'wp_ajax_sbi_debug_detection', [ $this, 'debug_detection' ] );
         
         // Status actions
         add_action( 'wp_ajax_sbi_refresh_status', [ $this, 'refresh_status' ] );
@@ -465,6 +468,26 @@ class AjaxHandler {
     }
 
     /**
+     * Debug plugin detection for specific repositories.
+     */
+    public function debug_detection(): void {
+        $this->verify_nonce_and_capability();
+
+        $repositories = [
+            'kissplugins/KISS-Plugin-Quick-Search',
+            'kissplugins/KISS-Projects-Tasks',
+            'kissplugins/KISS-Smart-Batch-Installer',
+        ];
+
+        $results = $this->detection_service->debug_detection( $repositories );
+
+        wp_send_json_success( [
+            'message' => 'Debug detection completed',
+            'results' => $results,
+        ] );
+    }
+
+    /**
      * Verify nonce and user capability.
      */
     private function verify_nonce_and_capability(): void {
@@ -473,7 +496,7 @@ class AjaxHandler {
                 'message' => __( 'Security check failed.', 'kiss-smart-batch-installer' )
             ] );
         }
-        
+
         if ( ! current_user_can( 'install_plugins' ) ) {
             wp_send_json_error( [
                 'message' => __( 'Insufficient permissions.', 'kiss-smart-batch-installer' )

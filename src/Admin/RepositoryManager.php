@@ -464,6 +464,9 @@ class RepositoryManager {
                                onclick="this.form.elements['sbi_action'].value='refresh_repositories';"
                                style="margin-left: 10px;"
                                value="<?php esc_attr_e( 'Refresh Cache', 'kiss-smart-batch-installer' ); ?>">
+                        <button type="button" id="debug-detection" class="button button-secondary" style="margin-left: 10px;">
+                            <?php esc_html_e( 'Debug Detection', 'kiss-smart-batch-installer' ); ?>
+                        </button>
                     <?php endif; ?>
                 </p>
             </form>
@@ -821,6 +824,29 @@ class RepositoryManager {
                 var errorDiv = $('<div class="notice notice-error is-dismissible"><p><?php esc_html_e( 'An error occurred while processing the bulk action.', 'kiss-smart-batch-installer' ); ?></p></div>');
                 $('.sbi-repository-list h2').after(errorDiv);
             }
+
+            // Debug detection button
+            $('#debug-detection').click(function() {
+                var button = $(this);
+                button.prop('disabled', true).text('<?php esc_html_e( 'Running Debug...', 'kiss-smart-batch-installer' ); ?>');
+
+                $.post(ajaxurl, {
+                    action: 'sbi_debug_detection',
+                    nonce: ajaxNonce
+                }, function(response) {
+                    button.prop('disabled', false).text('<?php esc_html_e( 'Debug Detection', 'kiss-smart-batch-installer' ); ?>');
+
+                    if (response.success) {
+                        console.log('Debug Detection Results:', response.data.results);
+                        alert('Debug completed! Check browser console for detailed results.');
+                    } else {
+                        alert('Debug failed: ' + response.data.message);
+                    }
+                }).fail(function() {
+                    button.prop('disabled', false).text('<?php esc_html_e( 'Debug Detection', 'kiss-smart-batch-installer' ); ?>');
+                    alert('Debug request failed.');
+                });
+            });
         });
         </script>
         <?php

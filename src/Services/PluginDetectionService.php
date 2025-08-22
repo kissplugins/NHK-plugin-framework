@@ -121,21 +121,149 @@ class PluginDetectionService {
     private function get_potential_plugin_files( array $repository ): array {
         $repo_name = $repository['name'] ?? '';
         $potential_files = [];
-        
-        // Common plugin file patterns
+
+        // First, try to get all PHP files from the repository root
+        $root_php_files = $this->get_root_php_files( $repository );
+        if ( ! empty( $root_php_files ) ) {
+            $potential_files = array_merge( $potential_files, $root_php_files );
+        }
+
+        // Common plugin file patterns based on repository name
         if ( ! empty( $repo_name ) ) {
             $potential_files[] = $repo_name . '.php';
             $potential_files[] = strtolower( $repo_name ) . '.php';
             $potential_files[] = str_replace( '-', '_', $repo_name ) . '.php';
+            $potential_files[] = str_replace( '_', '-', $repo_name ) . '.php';
+
+            // Handle KISS plugin naming patterns
+            if ( strpos( $repo_name, 'KISS-' ) === 0 ) {
+                $kiss_name = substr( $repo_name, 5 ); // Remove 'KISS-' prefix
+                $potential_files[] = 'KISS-' . strtolower( $kiss_name ) . '.php';
+                $potential_files[] = strtolower( $kiss_name ) . '.php';
+                $potential_files[] = str_replace( '-', '_', strtolower( $kiss_name ) ) . '.php';
+            }
+
+            // Handle common WordPress plugin naming patterns
+            $clean_name = strtolower( str_replace( [ 'KISS-', 'WP-', 'WordPress-' ], '', $repo_name ) );
+            $potential_files[] = $clean_name . '.php';
+            $potential_files[] = str_replace( '-', '_', $clean_name ) . '.php';
         }
-        
+
         // Standard WordPress plugin file names
         $potential_files[] = 'plugin.php';
         $potential_files[] = 'index.php';
         $potential_files[] = 'main.php';
-        
+        $potential_files[] = 'init.php';
+
         // Remove duplicates and return
         return array_unique( $potential_files );
+    }
+
+    /**
+     * Get all PHP files from the repository root directory.
+     *
+     * @param array $repository Repository data.
+     * @return array Array of PHP file names.
+     */
+    private function get_root_php_files( array $repository ): array {
+        $php_files = [];
+
+        // Get repository contents from GitHub API
+        $contents_url = sprintf(
+            'https://api.github.com/repos/%s/contents',
+            $repository['full_name'] ?? ''
+        );
+
+        $response = wp_remote_get( $contents_url, [
+            'timeout' => 30,
+            'headers' => [
+                'User-Agent' => 'WordPress/' . get_bloginfo( 'version' ) . '; ' . home_url(),
+            ],
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            return $php_files;
+        }
+
+        $body = wp_remote_retrieve_body( $response );
+        $contents = json_decode( $body, true );
+
+        if ( ! is_array( $contents ) ) {
+            return $php_files;
+        }
+
+        // Filter for PHP files in root directory
+        foreach ( $contents as $item ) {
+            if ( isset( $item['type'] ) && $item['type'] === 'file' &&
+                 isset( $item['name'] ) && substr( $item['name'], -4 ) === '.php' ) {
+                $php_files[] = $item['name'];
+            }
+        }
+
+        // Sort by likelihood of being the main plugin file
+        usort( $php_files, [ $this, 'sort_php_files_by_likelihood' ] );
+
+        return $php_files;
+    }
+
+    /**
+     * Sort PHP files by likelihood of being the main plugin file.
+     *
+     * @param string $a First file name.
+     * @param string $b Second file name.
+     * @return int Sort comparison result.
+     */
+    private function sort_php_files_by_likelihood( string $a, string $b ): int {
+        // Priority order for main plugin files
+        $priority_patterns = [
+            '/^[^\/]*\.php$/',           // Single word files (highest priority)
+            '/plugin\.php$/',            // plugin.php
+            '/main\.php$/',              // main.php
+            '/init\.php$/',              // init.php
+            '/index\.php$/',             // index.php (lowest priority for main files)
+        ];
+
+        // Files to deprioritize
+        $low_priority_patterns = [
+            '/functions\.php$/',         // functions.php
+            '/config\.php$/',           // config.php
+            '/settings\.php$/',         // settings.php
+            '/admin\.php$/',            // admin.php
+            '/helper/',                 // helper files
+            '/util/',                   // utility files
+            '/class-/',                 // class files
+        ];
+
+        $a_priority = $this->get_file_priority( $a, $priority_patterns, $low_priority_patterns );
+        $b_priority = $this->get_file_priority( $b, $priority_patterns, $low_priority_patterns );
+
+        return $a_priority - $b_priority;
+    }
+
+    /**
+     * Get priority score for a file.
+     *
+     * @param string $filename File name.
+     * @param array  $priority_patterns High priority patterns.
+     * @param array  $low_priority_patterns Low priority patterns.
+     * @return int Priority score (lower is higher priority).
+     */
+    private function get_file_priority( string $filename, array $priority_patterns, array $low_priority_patterns ): int {
+        // Check for low priority patterns first
+        foreach ( $low_priority_patterns as $pattern ) {
+            if ( preg_match( $pattern, $filename ) ) {
+                return 1000; // Very low priority
+            }
+        }
+
+        // Check for high priority patterns
+        foreach ( $priority_patterns as $index => $pattern ) {
+            if ( preg_match( $pattern, $filename ) ) {
+                return $index; // Higher priority (lower number)
+            }
+        }
+
+        return 500; // Medium priority
     }
     
     /**
@@ -305,5 +433,40 @@ class PluginDetectionService {
      */
     public function clear_repository_cache( string $repository_full_name ): bool {
         return $this->clear_cache( $repository_full_name );
+    }
+
+    /**
+     * Debug method to test detection on specific repositories.
+     *
+     * @param array $repository_names Array of repository full names to test.
+     * @return array Debug results.
+     */
+    public function debug_detection( array $repository_names ): array {
+        $results = [];
+
+        foreach ( $repository_names as $repo_name ) {
+            // Clear cache first
+            $this->clear_cache( $repo_name );
+
+            // Create a mock repository array for detection
+            $repository = [
+                'full_name' => $repo_name,
+                'name' => basename( $repo_name ),
+            ];
+
+            // Get potential files
+            $potential_files = $this->get_potential_plugin_files( $repository );
+
+            // Run detection with force refresh
+            $detection_result = $this->detect_plugin( $repository, true );
+
+            $results[ $repo_name ] = [
+                'repository' => $repository,
+                'potential_files' => $potential_files,
+                'detection_result' => $detection_result,
+            ];
+        }
+
+        return $results;
     }
 }
