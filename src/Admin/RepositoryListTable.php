@@ -116,6 +116,7 @@ class RepositoryListTable extends WP_List_Table {
         return [
             'install'   => __( 'Install Selected', 'kiss-smart-batch-installer' ),
             'activate'  => __( 'Activate Selected', 'kiss-smart-batch-installer' ),
+            'deactivate' => __( 'Deactivate Selected', 'kiss-smart-batch-installer' ),
             'refresh'   => __( 'Refresh Status', 'kiss-smart-batch-installer' ),
         ];
     }
@@ -234,10 +235,19 @@ class RepositoryListTable extends WP_List_Table {
         if ( ! $item['is_plugin'] ) {
             return '';
         }
-        
+
+        // Extract owner from full_name
+        $owner = '';
+        if ( isset( $item['full_name'] ) && strpos( $item['full_name'], '/' ) !== false ) {
+            $owner = explode( '/', $item['full_name'] )[0];
+        }
+
         return sprintf(
-            '<input type="checkbox" name="repositories[]" value="%s" />',
-            esc_attr( $item['full_name'] )
+            '<input type="checkbox" name="repositories[]" value="%s" data-owner="%s" data-repo="%s" data-plugin-file="%s" />',
+            esc_attr( $item['full_name'] ),
+            esc_attr( $owner ),
+            esc_attr( $item['name'] ),
+            esc_attr( $item['plugin_file'] ?? '' )
         );
     }
 

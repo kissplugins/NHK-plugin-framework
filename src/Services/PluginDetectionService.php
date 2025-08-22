@@ -296,4 +296,14 @@ class PluginDetectionService {
         
         return true;
     }
+
+    /**
+     * Clear cache for a specific repository.
+     *
+     * @param string $repository_full_name Repository full name (owner/repo).
+     * @return bool True on success.
+     */
+    public function clear_repository_cache( string $repository_full_name ): bool {
+        return $this->clear_cache( $repository_full_name );
+    }
 }

@@ -110,21 +110,62 @@ class RepositoryManager {
      * Handle form submissions.
      */
     private function handle_form_submission(): void {
-        if ( ! isset( $_POST['sbi_action'] ) || ! wp_verify_nonce( $_POST['sbi_nonce'], 'sbi_admin_action' ) ) {
-            return;
+        // Handle regular form submissions
+        if ( isset( $_POST['sbi_action'] ) && wp_verify_nonce( $_POST['sbi_nonce'], 'sbi_admin_action' ) ) {
+            if ( ! current_user_can( 'install_plugins' ) ) {
+                wp_die( __( 'Insufficient permissions.', 'kiss-smart-batch-installer' ) );
+            }
+
+            switch ( $_POST['sbi_action'] ) {
+                case 'save_organization':
+                    $this->save_organization();
+                    break;
+                case 'refresh_repositories':
+                    $this->refresh_repositories();
+                    break;
+            }
         }
-        
+
+        // Handle bulk actions
+        if ( isset( $_POST['action'] ) && wp_verify_nonce( $_POST['sbi_bulk_nonce'], 'sbi_bulk_action' ) ) {
+            $this->handle_bulk_action();
+        }
+    }
+
+    /**
+     * Handle bulk actions from the list table.
+     */
+    private function handle_bulk_action(): void {
         if ( ! current_user_can( 'install_plugins' ) ) {
             wp_die( __( 'Insufficient permissions.', 'kiss-smart-batch-installer' ) );
         }
-        
-        switch ( $_POST['sbi_action'] ) {
-            case 'save_organization':
-                $this->save_organization();
+
+        $action = sanitize_text_field( $_POST['action'] );
+        $repositories = $_POST['repositories'] ?? [];
+
+        if ( empty( $repositories ) || ! is_array( $repositories ) ) {
+            add_settings_error( 'sbi_messages', 'no_repositories', __( 'No repositories selected.', 'kiss-smart-batch-installer' ), 'error' );
+            return;
+        }
+
+        // Sanitize repository names
+        $repositories = array_map( 'sanitize_text_field', $repositories );
+
+        switch ( $action ) {
+            case 'install':
+                $this->bulk_install_repositories( $repositories );
                 break;
-            case 'refresh_repositories':
-                $this->refresh_repositories();
+            case 'activate':
+                $this->bulk_activate_repositories( $repositories );
                 break;
+            case 'deactivate':
+                $this->bulk_deactivate_repositories( $repositories );
+                break;
+            case 'refresh':
+                $this->bulk_refresh_repositories( $repositories );
+                break;
+            default:
+                add_settings_error( 'sbi_messages', 'invalid_action', __( 'Invalid bulk action.', 'kiss-smart-batch-installer' ), 'error' );
         }
     }
 
@@ -160,6 +201,224 @@ class RepositoryManager {
         $this->state_manager->clear_cache();
         
         add_settings_error( 'sbi_messages', 'cache_cleared', __( 'Repository cache refreshed successfully.', 'kiss-smart-batch-installer' ), 'success' );
+    }
+
+    /**
+     * Bulk install selected repositories.
+     *
+     * @param array $repositories Array of repository full names.
+     */
+    private function bulk_install_repositories( array $repositories ): void {
+        $success_count = 0;
+        $error_count = 0;
+        $errors = [];
+
+        foreach ( $repositories as $repo_full_name ) {
+            // Parse owner/repo from full name
+            $parts = explode( '/', $repo_full_name );
+            if ( count( $parts ) !== 2 ) {
+                $error_count++;
+                $errors[] = sprintf( __( 'Invalid repository format: %s', 'kiss-smart-batch-installer' ), $repo_full_name );
+                continue;
+            }
+
+            $owner = $parts[0];
+            $repo = $parts[1];
+
+            // Get the installation service from the container
+            $installation_service = $this->get_installation_service();
+            if ( ! $installation_service ) {
+                $error_count++;
+                $errors[] = sprintf( __( 'Installation service not available for: %s', 'kiss-smart-batch-installer' ), $repo_full_name );
+                continue;
+            }
+
+            // Install the plugin
+            $result = $installation_service->install_plugin( $owner, $repo );
+
+            if ( is_wp_error( $result ) ) {
+                $error_count++;
+                $errors[] = sprintf( __( '%s: %s', 'kiss-smart-batch-installer' ), $repo, $result->get_error_message() );
+            } else {
+                $success_count++;
+            }
+        }
+
+        // Display results
+        if ( $success_count > 0 ) {
+            add_settings_error(
+                'sbi_messages',
+                'bulk_install_success',
+                sprintf( __( 'Successfully installed %d plugins.', 'kiss-smart-batch-installer' ), $success_count ),
+                'success'
+            );
+        }
+
+        if ( $error_count > 0 ) {
+            $error_message = sprintf( __( 'Failed to install %d plugins:', 'kiss-smart-batch-installer' ), $error_count );
+            $error_message .= '<br>' . implode( '<br>', array_slice( $errors, 0, 5 ) ); // Show first 5 errors
+            if ( count( $errors ) > 5 ) {
+                $error_message .= '<br>' . sprintf( __( '... and %d more errors.', 'kiss-smart-batch-installer' ), count( $errors ) - 5 );
+            }
+            add_settings_error( 'sbi_messages', 'bulk_install_errors', $error_message, 'error' );
+        }
+    }
+
+    /**
+     * Bulk activate selected repositories.
+     *
+     * @param array $repositories Array of repository full names.
+     */
+    private function bulk_activate_repositories( array $repositories ): void {
+        $success_count = 0;
+        $error_count = 0;
+        $errors = [];
+
+        foreach ( $repositories as $repo_full_name ) {
+            // Get plugin file from state manager
+            $plugin_file = $this->state_manager->get_plugin_file( $repo_full_name );
+
+            if ( empty( $plugin_file ) ) {
+                $error_count++;
+                $errors[] = sprintf( __( 'Plugin file not found for: %s', 'kiss-smart-batch-installer' ), $repo_full_name );
+                continue;
+            }
+
+            // Get the installation service
+            $installation_service = $this->get_installation_service();
+            if ( ! $installation_service ) {
+                $error_count++;
+                $errors[] = sprintf( __( 'Installation service not available for: %s', 'kiss-smart-batch-installer' ), $repo_full_name );
+                continue;
+            }
+
+            // Activate the plugin
+            $result = $installation_service->activate_plugin( $plugin_file );
+
+            if ( is_wp_error( $result ) ) {
+                $error_count++;
+                $errors[] = sprintf( __( '%s: %s', 'kiss-smart-batch-installer' ), basename( $repo_full_name ), $result->get_error_message() );
+            } else {
+                $success_count++;
+            }
+        }
+
+        // Display results
+        if ( $success_count > 0 ) {
+            add_settings_error(
+                'sbi_messages',
+                'bulk_activate_success',
+                sprintf( __( 'Successfully activated %d plugins.', 'kiss-smart-batch-installer' ), $success_count ),
+                'success'
+            );
+        }
+
+        if ( $error_count > 0 ) {
+            $error_message = sprintf( __( 'Failed to activate %d plugins:', 'kiss-smart-batch-installer' ), $error_count );
+            $error_message .= '<br>' . implode( '<br>', array_slice( $errors, 0, 5 ) );
+            if ( count( $errors ) > 5 ) {
+                $error_message .= '<br>' . sprintf( __( '... and %d more errors.', 'kiss-smart-batch-installer' ), count( $errors ) - 5 );
+            }
+            add_settings_error( 'sbi_messages', 'bulk_activate_errors', $error_message, 'error' );
+        }
+    }
+
+    /**
+     * Bulk deactivate selected repositories.
+     *
+     * @param array $repositories Array of repository full names.
+     */
+    private function bulk_deactivate_repositories( array $repositories ): void {
+        $success_count = 0;
+        $error_count = 0;
+        $errors = [];
+
+        foreach ( $repositories as $repo_full_name ) {
+            // Get plugin file from state manager
+            $plugin_file = $this->state_manager->get_plugin_file( $repo_full_name );
+
+            if ( empty( $plugin_file ) ) {
+                $error_count++;
+                $errors[] = sprintf( __( 'Plugin file not found for: %s', 'kiss-smart-batch-installer' ), $repo_full_name );
+                continue;
+            }
+
+            // Get the installation service
+            $installation_service = $this->get_installation_service();
+            if ( ! $installation_service ) {
+                $error_count++;
+                $errors[] = sprintf( __( 'Installation service not available for: %s', 'kiss-smart-batch-installer' ), $repo_full_name );
+                continue;
+            }
+
+            // Deactivate the plugin
+            $result = $installation_service->deactivate_plugin( $plugin_file );
+
+            if ( is_wp_error( $result ) ) {
+                $error_count++;
+                $errors[] = sprintf( __( '%s: %s', 'kiss-smart-batch-installer' ), basename( $repo_full_name ), $result->get_error_message() );
+            } else {
+                $success_count++;
+            }
+        }
+
+        // Display results
+        if ( $success_count > 0 ) {
+            add_settings_error(
+                'sbi_messages',
+                'bulk_deactivate_success',
+                sprintf( __( 'Successfully deactivated %d plugins.', 'kiss-smart-batch-installer' ), $success_count ),
+                'success'
+            );
+        }
+
+        if ( $error_count > 0 ) {
+            $error_message = sprintf( __( 'Failed to deactivate %d plugins:', 'kiss-smart-batch-installer' ), $error_count );
+            $error_message .= '<br>' . implode( '<br>', array_slice( $errors, 0, 5 ) );
+            if ( count( $errors ) > 5 ) {
+                $error_message .= '<br>' . sprintf( __( '... and %d more errors.', 'kiss-smart-batch-installer' ), count( $errors ) - 5 );
+            }
+            add_settings_error( 'sbi_messages', 'bulk_deactivate_errors', $error_message, 'error' );
+        }
+    }
+
+    /**
+     * Bulk refresh selected repositories.
+     *
+     * @param array $repositories Array of repository full names.
+     */
+    private function bulk_refresh_repositories( array $repositories ): void {
+        foreach ( $repositories as $repo_full_name ) {
+            // Clear cache for this specific repository
+            $this->detection_service->clear_repository_cache( $repo_full_name );
+            $this->state_manager->clear_repository_cache( $repo_full_name );
+        }
+
+        add_settings_error(
+            'sbi_messages',
+            'bulk_refresh_success',
+            sprintf( __( 'Successfully refreshed %d repositories.', 'kiss-smart-batch-installer' ), count( $repositories ) ),
+            'success'
+        );
+    }
+
+    /**
+     * Get installation service from container.
+     *
+     * @return PluginInstallationService|null
+     */
+    private function get_installation_service() {
+        // Access the global container
+        $container = $GLOBALS['sbi_container'] ?? null;
+        if ( ! $container ) {
+            return null;
+        }
+
+        try {
+            return $container->get( \SBI\Services\PluginInstallationService::class );
+        } catch ( Exception $e ) {
+            return null;
+        }
     }
 
     /**
@@ -420,6 +679,148 @@ class RepositoryManager {
                     }
                 });
             });
+
+            // Bulk actions handling
+            $('#doaction, #doaction2').click(function(e) {
+                e.preventDefault();
+
+                var action = $(this).siblings('select').val();
+                if (action === '-1') {
+                    alert('<?php esc_html_e( 'Please select an action.', 'kiss-smart-batch-installer' ); ?>');
+                    return;
+                }
+
+                var checkedBoxes = $('input[name="repositories[]"]:checked');
+                if (checkedBoxes.length === 0) {
+                    alert('<?php esc_html_e( 'Please select at least one repository.', 'kiss-smart-batch-installer' ); ?>');
+                    return;
+                }
+
+                var repositories = [];
+                checkedBoxes.each(function() {
+                    repositories.push({
+                        full_name: $(this).val(),
+                        owner: $(this).data('owner'),
+                        repo: $(this).data('repo'),
+                        plugin_file: $(this).data('plugin-file')
+                    });
+                });
+
+                // Disable the button and show progress
+                var button = $(this);
+                var originalText = button.val();
+                button.prop('disabled', true).val('<?php esc_html_e( 'Processing...', 'kiss-smart-batch-installer' ); ?>');
+
+                // Show progress message
+                var progressDiv = $('<div class="notice notice-info"><p><?php esc_html_e( 'Processing bulk action, please wait...', 'kiss-smart-batch-installer' ); ?></p></div>');
+                $('.sbi-repository-list h2').after(progressDiv);
+
+                if (action === 'install') {
+                    performBulkInstall(repositories, button, originalText, progressDiv);
+                } else if (action === 'activate') {
+                    performBulkActivate(repositories, button, originalText, progressDiv);
+                } else if (action === 'deactivate') {
+                    performBulkDeactivate(repositories, button, originalText, progressDiv);
+                } else if (action === 'refresh') {
+                    performBulkRefresh(repositories, button, originalText, progressDiv);
+                }
+            });
+
+            function performBulkInstall(repositories, button, originalText, progressDiv) {
+                var repoData = repositories.map(function(repo) {
+                    return {
+                        owner: repo.owner,
+                        repo: repo.repo,
+                        branch: 'main'
+                    };
+                });
+
+                $.post(ajaxurl, {
+                    action: 'sbi_batch_install',
+                    repositories: repoData,
+                    activate: false,
+                    nonce: ajaxNonce
+                }, function(response) {
+                    handleBulkResponse(response, button, originalText, progressDiv);
+                }).fail(function() {
+                    handleBulkError(button, originalText, progressDiv);
+                });
+            }
+
+            function performBulkActivate(repositories, button, originalText, progressDiv) {
+                var pluginFiles = repositories.map(function(repo) {
+                    return {
+                        plugin_file: repo.plugin_file,
+                        repository: repo.repo
+                    };
+                });
+
+                $.post(ajaxurl, {
+                    action: 'sbi_batch_activate',
+                    plugin_files: pluginFiles,
+                    nonce: ajaxNonce
+                }, function(response) {
+                    handleBulkResponse(response, button, originalText, progressDiv);
+                }).fail(function() {
+                    handleBulkError(button, originalText, progressDiv);
+                });
+            }
+
+            function performBulkDeactivate(repositories, button, originalText, progressDiv) {
+                var pluginFiles = repositories.map(function(repo) {
+                    return {
+                        plugin_file: repo.plugin_file,
+                        repository: repo.repo
+                    };
+                });
+
+                $.post(ajaxurl, {
+                    action: 'sbi_batch_deactivate',
+                    plugin_files: pluginFiles,
+                    nonce: ajaxNonce
+                }, function(response) {
+                    handleBulkResponse(response, button, originalText, progressDiv);
+                }).fail(function() {
+                    handleBulkError(button, originalText, progressDiv);
+                });
+            }
+
+            function performBulkRefresh(repositories, button, originalText, progressDiv) {
+                // For refresh, we'll just reload the page after a short delay
+                setTimeout(function() {
+                    progressDiv.remove();
+                    button.prop('disabled', false).val(originalText);
+                    location.reload();
+                }, 1000);
+            }
+
+            function handleBulkResponse(response, button, originalText, progressDiv) {
+                progressDiv.remove();
+                button.prop('disabled', false).val(originalText);
+
+                if (response.success) {
+                    var message = response.data.message || '<?php esc_html_e( 'Bulk action completed successfully.', 'kiss-smart-batch-installer' ); ?>';
+                    var successDiv = $('<div class="notice notice-success is-dismissible"><p>' + message + '</p></div>');
+                    $('.sbi-repository-list h2').after(successDiv);
+
+                    // Refresh the page after 2 seconds to update the status
+                    setTimeout(function() {
+                        location.reload();
+                    }, 2000);
+                } else {
+                    var errorMessage = response.data.message || '<?php esc_html_e( 'Bulk action failed.', 'kiss-smart-batch-installer' ); ?>';
+                    var errorDiv = $('<div class="notice notice-error is-dismissible"><p>' + errorMessage + '</p></div>');
+                    $('.sbi-repository-list h2').after(errorDiv);
+                }
+            }
+
+            function handleBulkError(button, originalText, progressDiv) {
+                progressDiv.remove();
+                button.prop('disabled', false).val(originalText);
+
+                var errorDiv = $('<div class="notice notice-error is-dismissible"><p><?php esc_html_e( 'An error occurred while processing the bulk action.', 'kiss-smart-batch-installer' ); ?></p></div>');
+                $('.sbi-repository-list h2').after(errorDiv);
+            }
         });
         </script>
         <?php

@@ -237,6 +237,34 @@ class StateManager {
     }
 
     /**
+     * Clear cache for a specific repository.
+     *
+     * @param string $repository_full_name Repository full name (owner/repo).
+     */
+    public function clear_repository_cache( string $repository_full_name ): void {
+        // Remove from memory cache
+        unset( $this->states[ $repository_full_name ] );
+
+        // Update persistent cache
+        $cached_states = get_transient( 'sbi_plugin_states' );
+        if ( is_array( $cached_states ) && isset( $cached_states[ $repository_full_name ] ) ) {
+            unset( $cached_states[ $repository_full_name ] );
+            set_transient( 'sbi_plugin_states', $cached_states, self::CACHE_EXPIRATION );
+        }
+    }
+
+    /**
+     * Get plugin file for a repository.
+     *
+     * @param string $repository_full_name Repository full name (owner/repo).
+     * @return string|null Plugin file path or null if not found.
+     */
+    public function get_plugin_file( string $repository_full_name ): ?string {
+        $state = $this->get_plugin_state( $repository_full_name );
+        return $state['plugin_file'] ?? null;
+    }
+
+    /**
      * Get statistics about current states.
      *
      * @return array Statistics array.

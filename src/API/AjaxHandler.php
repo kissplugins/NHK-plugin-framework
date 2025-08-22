@@ -82,6 +82,7 @@ class AjaxHandler {
         // Batch actions
         add_action( 'wp_ajax_sbi_batch_install', [ $this, 'batch_install' ] );
         add_action( 'wp_ajax_sbi_batch_activate', [ $this, 'batch_activate' ] );
+        add_action( 'wp_ajax_sbi_batch_deactivate', [ $this, 'batch_deactivate' ] );
         
         // Status actions
         add_action( 'wp_ajax_sbi_refresh_status', [ $this, 'refresh_status' ] );
@@ -355,6 +356,63 @@ class AjaxHandler {
             'results' => $results,
             'total' => count( $results ),
             'successful' => count( array_filter( $results, fn( $r ) => $r['success'] ) ),
+        ] );
+    }
+
+    /**
+     * Batch deactivate plugins.
+     */
+    public function batch_deactivate(): void {
+        $this->verify_nonce_and_capability();
+
+        $plugin_files = $_POST['plugin_files'] ?? [];
+
+        if ( empty( $plugin_files ) || ! is_array( $plugin_files ) ) {
+            wp_send_json_error( [
+                'message' => __( 'No plugin files provided.', 'kiss-smart-batch-installer' )
+            ] );
+        }
+
+        $results = [];
+        foreach ( $plugin_files as $plugin_data ) {
+            if ( ! is_array( $plugin_data ) || empty( $plugin_data['plugin_file'] ) ) {
+                continue;
+            }
+
+            $plugin_file = sanitize_text_field( $plugin_data['plugin_file'] );
+            $repo_name = sanitize_text_field( $plugin_data['repository'] ?? '' );
+
+            $result = $this->installation_service->deactivate_plugin( $plugin_file );
+
+            if ( is_wp_error( $result ) ) {
+                $results[] = [
+                    'repository' => $repo_name,
+                    'plugin_file' => $plugin_file,
+                    'success' => false,
+                    'error' => $result->get_error_message(),
+                ];
+            } else {
+                $results[] = array_merge( $result, [
+                    'repository' => $repo_name,
+                    'success' => true,
+                ] );
+            }
+        }
+
+        // Count successful deactivations
+        $success_count = count( array_filter( $results, function( $result ) {
+            return $result['success'] ?? false;
+        } ) );
+
+        wp_send_json_success( [
+            'message' => sprintf(
+                __( 'Successfully processed %d of %d plugins.', 'kiss-smart-batch-installer' ),
+                $success_count,
+                count( $results )
+            ),
+            'results' => $results,
+            'success_count' => $success_count,
+            'total_count' => count( $results ),
         ] );
     }
 
