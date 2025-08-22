@@ -67,7 +67,44 @@ Before building custom interfaces, check if WordPress core already provides what
 - WordPress modal/dialog patterns
 - WordPress tabs and accordion interfaces
 
-## 4. All Plugins Must Handle Deactivation and Uninstall Gracefully
+## 4. All Plugins Must Implement Proper Security from Day One
+
+Never trust user input - sanitize inputs, validate data, and escape outputs religiously. Security isn't something you bolt on later; it must be baked into your architecture from the first line of code. Follow the principle of least privilege and implement defense in depth.
+
+**Security Essentials:**
+- Use WordPress nonces for all form submissions
+- Implement proper capability checks before allowing actions
+- Sanitize all inputs using WordPress sanitization functions
+- Validate data types and ranges
+- Escape all outputs using appropriate WordPress functions
+- Use prepared statements for database queries
+- Implement rate limiting for sensitive operations
+- Follow OWASP security guidelines
+
+## 5. All Plugins Must Be Translation-Ready and Accessible
+
+Build inclusively from the start. Wrap all user-facing strings in proper internationalization functions and follow WCAG accessibility guidelines. Your plugin should work for users regardless of their language, abilities, or how they interact with their WordPress site.
+
+**Internationalization Requirements:**
+- Use `__()`, `_e()`, `_n()`, and other i18n functions
+- Provide a unique text domain
+- Generate .pot files for translators
+- Support RTL languages when applicable
+
+**Accessibility Standards:**
+- Use semantic HTML elements
+- Implement proper ARIA labels and roles
+- Ensure keyboard navigation support
+- Maintain sufficient color contrast (4.5:1 minimum)
+- Provide alternative text for images
+- Test with screen readers
+- Follow WordPress accessibility coding standards
+
+---
+
+# TBD - ON A PER CASE BASIS
+
+## All Plugins Must Handle Deactivation and Uninstall Gracefully
 
 Clean up after yourself completely. Register proper deactivation and uninstall hooks that remove custom database tables, delete options, clear scheduled events, and remove any files created. Users should be able to remove your plugin without leaving database bloat or orphaned data.
 
@@ -89,40 +126,7 @@ register_uninstall_hook(__FILE__, 'plugin_uninstall');
 // OR create uninstall.php file
 ```
 
-## 5. All Plugins Must Implement Proper Security from Day One
 
-Never trust user input - sanitize inputs, validate data, and escape outputs religiously. Security isn't something you bolt on later; it must be baked into your architecture from the first line of code. Follow the principle of least privilege and implement defense in depth.
-
-**Security Essentials:**
-- Use WordPress nonces for all form submissions
-- Implement proper capability checks before allowing actions
-- Sanitize all inputs using WordPress sanitization functions
-- Validate data types and ranges
-- Escape all outputs using appropriate WordPress functions
-- Use prepared statements for database queries
-- Implement rate limiting for sensitive operations
-- Follow OWASP security guidelines
-
-## 6. All Plugins Must Be Translation-Ready and Accessible
-
-Build inclusively from the start. Wrap all user-facing strings in proper internationalization functions and follow WCAG accessibility guidelines. Your plugin should work for users regardless of their language, abilities, or how they interact with their WordPress site.
-
-**Internationalization Requirements:**
-- Use `__()`, `_e()`, `_n()`, and other i18n functions
-- Provide a unique text domain
-- Generate .pot files for translators
-- Support RTL languages when applicable
-
-**Accessibility Standards:**
-- Use semantic HTML elements
-- Implement proper ARIA labels and roles
-- Ensure keyboard navigation support
-- Maintain sufficient color contrast (4.5:1 minimum)
-- Provide alternative text for images
-- Test with screen readers
-- Follow WordPress accessibility coding standards
-
----
 
 ## The Golden Rule
 
