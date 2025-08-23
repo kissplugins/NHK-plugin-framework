@@ -131,7 +131,7 @@ class RepositoryListTable extends WP_List_Table {
         }
 
         // Fetch repositories from GitHub
-        $repositories = $this->github_service->fetch_repositories( $this->organization );
+        $repositories = $this->github_service->fetch_repositories_for_account( $this->organization );
         
         if ( is_wp_error( $repositories ) ) {
             $this->items = [];
@@ -400,5 +400,61 @@ class RepositoryListTable extends WP_List_Table {
                 '<strong>' . esc_html( $this->organization ) . '</strong>'
             );
         }
+    }
+
+    /**
+     * Render a single repository row for progressive loading.
+     *
+     * @param array $item Repository item data.
+     * @return string HTML for the table row.
+     */
+    public function render_single_row( array $item ): string {
+        ob_start();
+        $this->single_row( $item );
+        return ob_get_clean();
+    }
+
+    /**
+     * Render a loading placeholder row.
+     *
+     * @param array $repository Basic repository data.
+     * @return string HTML for the loading row.
+     */
+    public function render_loading_row( array $repository ): string {
+        $columns = $this->get_columns();
+        $row_id = 'repo-' . sanitize_html_class( $repository['full_name'] );
+
+        ob_start();
+        ?>
+        <tr id="<?php echo esc_attr( $row_id ); ?>" class="sbi-loading-row">
+            <?php foreach ( $columns as $column_name => $column_display_name ): ?>
+                <td class="<?php echo esc_attr( $column_name ); ?> column-<?php echo esc_attr( $column_name ); ?>">
+                    <?php if ( $column_name === 'cb' ): ?>
+                        <!-- Empty checkbox cell -->
+                    <?php elseif ( $column_name === 'name' ): ?>
+                        <strong><?php echo esc_html( $repository['name'] ); ?></strong>
+                        <div class="sbi-loading-indicator">
+                            <span class="spinner is-active" style="float: none; margin: 0 5px 0 0;"></span>
+                            <?php esc_html_e( 'Scanning for WordPress plugin...', 'kiss-smart-batch-installer' ); ?>
+                        </div>
+                    <?php elseif ( $column_name === 'description' ): ?>
+                        <?php echo esc_html( $repository['description'] ?: __( 'No description available', 'kiss-smart-batch-installer' ) ); ?>
+                    <?php elseif ( $column_name === 'plugin_status' ): ?>
+                        <span class="sbi-status-scanning">
+                            <span class="spinner is-active" style="float: none; margin: 0 5px 0 0;"></span>
+                            <?php esc_html_e( 'Scanning...', 'kiss-smart-batch-installer' ); ?>
+                        </span>
+                    <?php elseif ( $column_name === 'actions' ): ?>
+                        <span class="sbi-actions-loading">
+                            <?php esc_html_e( 'Loading...', 'kiss-smart-batch-installer' ); ?>
+                        </span>
+                    <?php else: ?>
+                        <!-- Empty cell for other columns -->
+                    <?php endif; ?>
+                </td>
+            <?php endforeach; ?>
+        </tr>
+        <?php
+        return ob_get_clean();
     }
 }

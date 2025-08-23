@@ -14,6 +14,7 @@ use SBI\Services\GitHubService;
 use SBI\Services\PluginDetectionService;
 use SBI\Services\PluginInstallationService;
 use SBI\Admin\RepositoryManager;
+use SBI\Admin\SelfTestsPage;
 use SBI\API\AjaxHandler;
 
 /**
@@ -60,6 +61,16 @@ class Plugin extends BasePlugin {
                 );
             });
 
+            // Register Self Tests page
+            $this->container->singleton(SelfTestsPage::class, function($container) {
+                return new SelfTestsPage(
+                    $container->get(GitHubService::class),
+                    $container->get(PluginDetectionService::class),
+                    $container->get(StateManager::class),
+                    $container->get(AjaxHandler::class)
+                );
+            });
+
             // Register AJAX handler with all dependencies
             $this->container->singleton(AjaxHandler::class, function($container) {
                 return new AjaxHandler(
@@ -85,13 +96,16 @@ class Plugin extends BasePlugin {
 
         // Register AJAX hooks
         add_action('init', [ $this, 'register_ajax_hooks' ]);
+
+        // Register admin assets
+        add_action('admin_enqueue_scripts', [ $this, 'enqueue_admin_assets' ]);
     }
 
     /**
      * Register admin menu page.
      */
     public function register_admin_page(): void {
-        // Add submenu under Plugins menu
+        // Add main submenu under Plugins menu
         add_submenu_page(
             'plugins.php',
             __( 'KISS Smart Batch Installer', 'kiss-smart-batch-installer' ),
@@ -99,6 +113,16 @@ class Plugin extends BasePlugin {
             'install_plugins',
             'kiss-smart-batch-installer',
             [ $this, 'render_admin_page' ]
+        );
+
+        // Add Self Tests submenu
+        add_submenu_page(
+            'plugins.php',
+            __( 'KISS Smart Batch Installer - Self Tests', 'kiss-smart-batch-installer' ),
+            __( 'SBI Self Tests', 'kiss-smart-batch-installer' ),
+            'install_plugins',
+            'sbi-self-tests',
+            [ $this, 'render_self_tests_page' ]
         );
     }
 
@@ -130,6 +154,48 @@ class Plugin extends BasePlugin {
     }
 
     /**
+     * Enqueue admin assets.
+     *
+     * @param string $hook Current admin page hook.
+     */
+    public function enqueue_admin_assets( string $hook ): void {
+        // Only load on SBI admin pages
+        if ( ! in_array( $hook, [ 'plugins_page_kiss-smart-batch-installer', 'plugins_page_sbi-self-tests' ], true ) ) {
+            return;
+        }
+
+        // Register and enqueue admin CSS
+        wp_register_style(
+            'sbi-admin',
+            $this->plugin_url . 'assets/admin.css',
+            [],
+            $this->version
+        );
+        wp_enqueue_style( 'sbi-admin' );
+
+        // Register and enqueue admin JavaScript
+        wp_register_script(
+            'sbi-admin',
+            $this->plugin_url . 'assets/admin.js',
+            [ 'jquery' ],
+            $this->version,
+            true
+        );
+        wp_enqueue_script( 'sbi-admin' );
+
+        // Localize script with AJAX data
+        wp_localize_script( 'sbi-admin', 'sbiAjax', [
+            'ajaxurl' => admin_url( 'admin-ajax.php' ),
+            'nonce' => wp_create_nonce( 'sbi_ajax_nonce' ),
+            'strings' => [
+                'loading' => __( 'Loading...', 'kiss-smart-batch-installer' ),
+                'error' => __( 'An error occurred', 'kiss-smart-batch-installer' ),
+                'success' => __( 'Success', 'kiss-smart-batch-installer' ),
+            ]
+        ] );
+    }
+
+    /**
      * Render admin page output.
      */
     public function render_admin_page(): void {
@@ -140,6 +206,20 @@ class Plugin extends BasePlugin {
             $this->render_welcome_page();
         } else {
             $this->render_repository_manager();
+        }
+    }
+
+    /**
+     * Render Self Tests page.
+     */
+    public function render_self_tests_page(): void {
+        try {
+            $self_tests_page = $this->container->get( SelfTestsPage::class );
+            $self_tests_page->render();
+        } catch ( Exception $e ) {
+            echo '<div class="notice notice-error"><p>';
+            echo esc_html( sprintf( __( 'Failed to load Self Tests page: %s', 'kiss-smart-batch-installer' ), $e->getMessage() ) );
+            echo '</p></div>';
         }
     }
 

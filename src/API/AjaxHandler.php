@@ -72,6 +72,9 @@ class AjaxHandler {
     public function register_hooks(): void {
         // Repository actions
         add_action( 'wp_ajax_sbi_fetch_repositories', [ $this, 'fetch_repositories' ] );
+        add_action( 'wp_ajax_sbi_fetch_repository_list', [ $this, 'fetch_repository_list' ] );
+        add_action( 'wp_ajax_sbi_process_repository', [ $this, 'process_repository' ] );
+        add_action( 'wp_ajax_sbi_render_repository_row', [ $this, 'render_repository_row' ] );
         add_action( 'wp_ajax_sbi_refresh_repository', [ $this, 'refresh_repository' ] );
         
         // Plugin actions
@@ -86,7 +89,10 @@ class AjaxHandler {
 
         // Debug action (temporary)
         add_action( 'wp_ajax_sbi_debug_detection', [ $this, 'debug_detection' ] );
-        
+
+        // Test actions
+        add_action( 'wp_ajax_sbi_test_repository', [ $this, 'test_repository' ] );
+
         // Status actions
         add_action( 'wp_ajax_sbi_refresh_status', [ $this, 'refresh_status' ] );
         add_action( 'wp_ajax_sbi_get_installation_progress', [ $this, 'get_installation_progress' ] );
@@ -100,6 +106,7 @@ class AjaxHandler {
 
         $account_name = sanitize_text_field( $_POST['organization'] ?? '' );
         $force_refresh = (bool) ( $_POST['force_refresh'] ?? false );
+        $limit = (int) ( $_POST['limit'] ?? 0 ); // 0 = no limit
 
         if ( empty( $account_name ) ) {
             wp_send_json_error( [
@@ -107,7 +114,7 @@ class AjaxHandler {
             ] );
         }
 
-        $repositories = $this->github_service->fetch_repositories( $account_name, $force_refresh );
+        $repositories = $this->github_service->fetch_repositories_for_account( $account_name, $force_refresh, $limit );
         
         if ( is_wp_error( $repositories ) ) {
             wp_send_json_error( [
@@ -133,6 +140,196 @@ class AjaxHandler {
             'repositories' => $processed_repos,
             'total' => count( $processed_repos ),
         ] );
+    }
+
+    /**
+     * Fetch repository list without processing (for progressive loading).
+     */
+    public function fetch_repository_list(): void {
+        $this->verify_nonce_and_capability();
+
+        $account_name = sanitize_text_field( $_POST['organization'] ?? '' );
+        $force_refresh = (bool) ( $_POST['force_refresh'] ?? false );
+        $limit = (int) ( $_POST['limit'] ?? 0 ); // 0 = no limit
+
+        // Debug logging
+        error_log( sprintf( 'SBI AJAX: fetch_repository_list called for %s (limit: %d)', $account_name, $limit ) );
+
+        if ( empty( $account_name ) ) {
+            error_log( 'SBI AJAX: fetch_repository_list failed - account name is empty' );
+            wp_send_json_error( [
+                'message' => __( 'Account name is required.', 'kiss-smart-batch-installer' )
+            ] );
+        }
+
+        $repositories = $this->github_service->fetch_repositories_for_account( $account_name, $force_refresh, $limit );
+
+        if ( is_wp_error( $repositories ) ) {
+            error_log( sprintf( 'SBI AJAX: fetch_repository_list failed for %s: %s', $account_name, $repositories->get_error_message() ) );
+            wp_send_json_error( [
+                'message' => $repositories->get_error_message()
+            ] );
+        }
+
+        error_log( sprintf( 'SBI AJAX: fetch_repository_list success for %s - found %d repositories', $account_name, count( $repositories ) ) );
+
+        // Return just the basic repository data without processing
+        wp_send_json_success( [
+            'repositories' => $repositories,
+            'total' => count( $repositories ),
+        ] );
+    }
+
+    /**
+     * Process a single repository (plugin detection and state management).
+     */
+    public function process_repository(): void {
+        $this->verify_nonce_and_capability();
+
+        $repository = $_POST['repository'] ?? [];
+        $repo_name = $repository['full_name'] ?? 'unknown';
+
+        // Debug logging
+        error_log( sprintf( 'SBI AJAX: process_repository called for %s', $repo_name ) );
+
+        // Add a significant delay to prevent overwhelming GitHub API
+        sleep( 1 ); // 1 second delay on server side
+
+        if ( empty( $repository ) || ! is_array( $repository ) ) {
+            error_log( 'SBI AJAX: process_repository failed - repository data is empty or invalid' );
+            wp_send_json_error( [
+                'message' => __( 'Repository data is required.', 'kiss-smart-batch-installer' )
+            ] );
+        }
+
+        // Sanitize repository data
+        $repo = [
+            'id' => intval( $repository['id'] ?? 0 ),
+            'name' => sanitize_text_field( $repository['name'] ?? '' ),
+            'full_name' => sanitize_text_field( $repository['full_name'] ?? '' ),
+            'description' => sanitize_textarea_field( $repository['description'] ?? '' ),
+            'html_url' => esc_url_raw( $repository['html_url'] ?? '' ),
+            'clone_url' => esc_url_raw( $repository['clone_url'] ?? '' ),
+            'updated_at' => sanitize_text_field( $repository['updated_at'] ?? '' ),
+            'language' => sanitize_text_field( $repository['language'] ?? '' ),
+        ];
+
+        if ( empty( $repo['full_name'] ) ) {
+            error_log( 'SBI AJAX: process_repository failed - repository full_name is empty' );
+            wp_send_json_error( [
+                'message' => __( 'Repository full name is required.', 'kiss-smart-batch-installer' )
+            ] );
+        }
+
+        error_log( sprintf( 'SBI AJAX: Starting plugin detection for %s', $repo['full_name'] ) );
+
+        // Process repository with plugin detection
+        try {
+            $detection_result = $this->detection_service->detect_plugin( $repo );
+            $is_plugin = ! is_wp_error( $detection_result ) && $detection_result['is_plugin'];
+
+            // Determine the correct state based on detection result and installation status
+            if ( is_wp_error( $detection_result ) ) {
+                $state = \SBI\Enums\PluginState::ERROR;
+            } elseif ( ! $is_plugin ) {
+                $state = \SBI\Enums\PluginState::NOT_PLUGIN;
+            } else {
+                // It's a WordPress plugin, check if it's installed
+                $plugin_slug = basename( $repo['full_name'] );
+                $plugin_file = $this->find_installed_plugin( $plugin_slug );
+
+                if ( empty( $plugin_file ) ) {
+                    $state = \SBI\Enums\PluginState::AVAILABLE;
+                } elseif ( is_plugin_active( $plugin_file ) ) {
+                    $state = \SBI\Enums\PluginState::INSTALLED_ACTIVE;
+                } else {
+                    $state = \SBI\Enums\PluginState::INSTALLED_INACTIVE;
+                }
+            }
+
+            $processed_repo = [
+                'repository' => $repo,
+                'is_plugin' => $is_plugin,
+                'plugin_data' => ! is_wp_error( $detection_result ) ? $detection_result['plugin_data'] : [],
+                'plugin_file' => ! is_wp_error( $detection_result ) ? $detection_result['plugin_file'] : '',
+                'state' => $state->value,
+                'scan_method' => ! is_wp_error( $detection_result ) ? $detection_result['scan_method'] : '',
+                'error' => is_wp_error( $detection_result ) ? $detection_result->get_error_message() : null,
+            ];
+
+            // Log successful processing for debugging
+            error_log( sprintf( 'SBI: Successfully processed repository %s', $repo['full_name'] ) );
+
+            wp_send_json_success( [
+                'repository' => $processed_repo,
+            ] );
+        } catch ( Exception $e ) {
+            // Log the error for debugging
+            error_log( sprintf( 'SBI: Error processing repository %s: %s', $repo['full_name'], $e->getMessage() ) );
+
+            wp_send_json_error( [
+                'message' => sprintf(
+                    __( 'Failed to process repository %s: %s', 'kiss-smart-batch-installer' ),
+                    $repo['name'],
+                    $e->getMessage()
+                )
+            ] );
+        }
+    }
+
+    /**
+     * Render a repository row HTML for progressive loading.
+     */
+    public function render_repository_row(): void {
+        $this->verify_nonce_and_capability();
+
+        $repository_data = $_POST['repository'] ?? [];
+        $repo_name = $repository_data['repository']['full_name'] ?? 'unknown';
+
+        // Debug logging
+        error_log( sprintf( 'SBI AJAX: render_repository_row called for %s', $repo_name ) );
+
+        if ( empty( $repository_data ) || ! is_array( $repository_data ) ) {
+            error_log( 'SBI AJAX: render_repository_row failed - repository data is empty or invalid' );
+            wp_send_json_error( [
+                'message' => __( 'Repository data is required.', 'kiss-smart-batch-installer' )
+            ] );
+        }
+
+        try {
+            // Flatten the data structure to match what RepositoryListTable expects
+            $repo_data = $repository_data['repository'] ?? [];
+            $flattened_data = array_merge( $repo_data, [
+                'is_plugin' => $repository_data['is_plugin'] ?? false,
+                'plugin_data' => $repository_data['plugin_data'] ?? [],
+                'plugin_file' => $repository_data['plugin_file'] ?? '',
+                'installation_state' => \SBI\Enums\PluginState::from( $repository_data['state'] ?? 'unknown' ),
+            ] );
+
+            error_log( sprintf( 'SBI AJAX: Flattened data for %s: %s', $repo_name, json_encode( array_keys( $flattened_data ) ) ) );
+
+            // Get the list table instance with proper dependencies
+            $list_table = new \SBI\Admin\RepositoryListTable(
+                $this->github_service,
+                $this->detection_service,
+                $this->state_manager
+            );
+
+            // Render the row HTML
+            $row_html = $list_table->render_single_row( $flattened_data );
+
+            error_log( sprintf( 'SBI AJAX: render_repository_row success for %s - HTML length: %d', $repo_name, strlen( $row_html ) ) );
+
+            wp_send_json_success( [
+                'row_html' => $row_html,
+                'repository_id' => $repository_data['repository']['full_name'] ?? '',
+            ] );
+        } catch ( Exception $e ) {
+            error_log( sprintf( 'SBI AJAX: render_repository_row failed for %s: %s', $repo_name, $e->getMessage() ) );
+            wp_send_json_error( [
+                'message' => sprintf( 'Failed to render row: %s', $e->getMessage() )
+            ] );
+        }
     }
 
     /**
@@ -163,41 +360,169 @@ class AjaxHandler {
      * Install plugin from repository.
      */
     public function install_plugin(): void {
-        $this->verify_nonce_and_capability();
+        $debug_steps = [];
+        $start_time = microtime( true );
 
-        $repo_name = sanitize_text_field( $_POST['repository'] ?? '' );
-        $owner = sanitize_text_field( $_POST['owner'] ?? '' );
-        $activate = (bool) ( $_POST['activate'] ?? false );
+        try {
+            // Step 1: Security verification
+            $debug_steps[] = [
+                'step' => 'Security Verification',
+                'status' => 'starting',
+                'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
+            ];
 
-        if ( empty( $repo_name ) ) {
-            wp_send_json_error( [
-                'message' => __( 'Repository name is required.', 'kiss-smart-batch-installer' )
-            ] );
-        }
+            $this->verify_nonce_and_capability();
 
-        if ( empty( $owner ) ) {
-            wp_send_json_error( [
-                'message' => __( 'Repository owner is required.', 'kiss-smart-batch-installer' )
-            ] );
-        }
+            $debug_steps[] = [
+                'step' => 'Security Verification',
+                'status' => 'completed',
+                'message' => 'Nonce and capability checks passed',
+                'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
+            ];
 
-        // Install the plugin
-        $result = $this->installation_service->install_and_activate( $owner, $repo_name, $activate );
+            // Step 2: Parameter validation
+            $debug_steps[] = [
+                'step' => 'Parameter Validation',
+                'status' => 'starting',
+                'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
+            ];
 
-        if ( is_wp_error( $result ) ) {
-            wp_send_json_error( [
-                'message' => $result->get_error_message(),
+            $repo_name = sanitize_text_field( $_POST['repository'] ?? '' );
+            $owner = sanitize_text_field( $_POST['owner'] ?? '' );
+            $activate = (bool) ( $_POST['activate'] ?? false );
+
+            error_log( sprintf( 'SBI INSTALL: Starting installation for %s/%s (activate: %s)',
+                $owner, $repo_name, $activate ? 'yes' : 'no' ) );
+
+            if ( empty( $repo_name ) ) {
+                $debug_steps[] = [
+                    'step' => 'Parameter Validation',
+                    'status' => 'failed',
+                    'error' => 'Repository name is required',
+                    'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
+                ];
+
+                wp_send_json_error( [
+                    'message' => __( 'Repository name is required.', 'kiss-smart-batch-installer' ),
+                    'debug_steps' => $debug_steps
+                ] );
+            }
+
+            if ( empty( $owner ) ) {
+                $debug_steps[] = [
+                    'step' => 'Parameter Validation',
+                    'status' => 'failed',
+                    'error' => 'Repository owner is required',
+                    'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
+                ];
+
+                wp_send_json_error( [
+                    'message' => __( 'Repository owner is required.', 'kiss-smart-batch-installer' ),
+                    'debug_steps' => $debug_steps
+                ] );
+            }
+
+            $debug_steps[] = [
+                'step' => 'Parameter Validation',
+                'status' => 'completed',
+                'message' => sprintf( 'Repository: %s/%s, Activate: %s', $owner, $repo_name, $activate ? 'yes' : 'no' ),
+                'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
+            ];
+
+            // Step 3: Plugin installation
+            $debug_steps[] = [
+                'step' => 'Plugin Installation',
+                'status' => 'starting',
+                'message' => 'Calling installation service',
+                'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
+            ];
+
+            error_log( sprintf( 'SBI INSTALL: Calling installation service for %s/%s', $owner, $repo_name ) );
+
+            $result = $this->installation_service->install_and_activate( $owner, $repo_name, $activate );
+
+            if ( is_wp_error( $result ) ) {
+                $error_code = $result->get_error_code();
+                $error_message = $result->get_error_message();
+
+                // Enhanced error message for 404 errors
+                if ( $error_code === 'github_api_error' && strpos( $error_message, '404' ) !== false ) {
+                    $enhanced_message = sprintf(
+                        'Repository %s/%s not found. This could mean: 1) Repository doesn\'t exist, 2) Repository is private, 3) Repository name is incorrect, or 4) GitHub API is temporarily unavailable.',
+                        $owner,
+                        $repo_name
+                    );
+                } else {
+                    $enhanced_message = $error_message;
+                }
+
+                $debug_steps[] = [
+                    'step' => 'Plugin Installation',
+                    'status' => 'failed',
+                    'error' => $enhanced_message,
+                    'original_error' => $error_message,
+                    'error_code' => $error_code,
+                    'repository_url' => sprintf( 'https://github.com/%s/%s', $owner, $repo_name ),
+                    'api_url' => sprintf( 'https://api.github.com/repos/%s/%s', $owner, $repo_name ),
+                    'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
+                ];
+
+                error_log( sprintf( 'SBI INSTALL: Installation failed for %s/%s: %s (Code: %s)',
+                    $owner, $repo_name, $error_message, $error_code ) );
+
+                wp_send_json_error( [
+                    'message' => $enhanced_message,
+                    'repository' => $repo_name,
+                    'debug_steps' => $debug_steps,
+                    'troubleshooting' => [
+                        'check_repository_exists' => sprintf( 'https://github.com/%s/%s', $owner, $repo_name ),
+                        'verify_repository_public' => 'Make sure the repository is public',
+                        'check_spelling' => 'Verify owner and repository names are correct'
+                    ]
+                ] );
+            }
+
+            $debug_steps[] = [
+                'step' => 'Plugin Installation',
+                'status' => 'completed',
+                'message' => 'Installation completed successfully',
+                'result_data' => $result,
+                'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
+            ];
+
+            error_log( sprintf( 'SBI INSTALL: Installation successful for %s/%s', $owner, $repo_name ) );
+
+            // Step 4: Success response
+            $total_time = round( ( microtime( true ) - $start_time ) * 1000, 2 );
+
+            wp_send_json_success( array_merge( $result, [
+                'message' => sprintf(
+                    __( 'Plugin %s installed successfully.', 'kiss-smart-batch-installer' ),
+                    $repo_name
+                ),
                 'repository' => $repo_name,
+                'debug_steps' => $debug_steps,
+                'total_time' => $total_time
+            ] ) );
+
+        } catch ( Exception $e ) {
+            $debug_steps[] = [
+                'step' => 'Exception Handler',
+                'status' => 'failed',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
+            ];
+
+            error_log( sprintf( 'SBI INSTALL: Exception during installation of %s/%s: %s',
+                $owner ?? 'unknown', $repo_name ?? 'unknown', $e->getMessage() ) );
+
+            wp_send_json_error( [
+                'message' => sprintf( 'Installation failed: %s', $e->getMessage() ),
+                'repository' => $repo_name ?? 'unknown',
+                'debug_steps' => $debug_steps
             ] );
         }
-
-        wp_send_json_success( array_merge( $result, [
-            'message' => sprintf(
-                __( 'Plugin %s installed successfully.', 'kiss-smart-batch-installer' ),
-                $repo_name
-            ),
-            'repository' => $repo_name,
-        ] ) );
     }
 
     /**
@@ -502,5 +827,80 @@ class AjaxHandler {
                 'message' => __( 'Insufficient permissions.', 'kiss-smart-batch-installer' )
             ] );
         }
+    }
+
+    /**
+     * Find installed plugin file for a given slug.
+     *
+     * @param string $plugin_slug Plugin slug.
+     * @return string Plugin file path or empty string if not found.
+     */
+    private function find_installed_plugin( string $plugin_slug ): string {
+        if ( ! function_exists( 'get_plugins' ) ) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        $all_plugins = get_plugins();
+
+        foreach ( $all_plugins as $plugin_file => $plugin_data ) {
+            $plugin_dir = dirname( $plugin_file );
+
+            // Check if plugin directory matches the slug
+            if ( $plugin_dir === $plugin_slug || $plugin_file === $plugin_slug . '.php' ) {
+                return $plugin_file;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Test repository access for debugging.
+     */
+    public function test_repository(): void {
+        // Verify nonce
+        if ( ! wp_verify_nonce( $_POST['nonce'] ?? '', 'sbi_test_repository' ) ) {
+            wp_send_json_error( [ 'message' => 'Invalid nonce' ] );
+        }
+
+        $owner = sanitize_text_field( $_POST['owner'] ?? '' );
+        $repo = sanitize_text_field( $_POST['repo'] ?? '' );
+
+        if ( empty( $owner ) || empty( $repo ) ) {
+            wp_send_json_error( [ 'message' => 'Owner and repository name are required' ] );
+        }
+
+        // Test repository access
+        $repository_info = $this->github_service->get_repository_info( $owner, $repo );
+
+        if ( is_wp_error( $repository_info ) ) {
+            $error_data = $repository_info->get_error_data();
+            $response_data = [
+                'message' => $repository_info->get_error_message(),
+                'troubleshooting' => [
+                    'check_repository_exists' => sprintf( 'https://github.com/%s/%s', $owner, $repo ),
+                    'verify_repository_public' => 'Make sure the repository is public',
+                    'check_spelling' => 'Verify owner and repository names are correct'
+                ]
+            ];
+
+            if ( is_array( $error_data ) ) {
+                $response_data['debug_info'] = $error_data;
+            }
+
+            wp_send_json_error( $response_data );
+        }
+
+        // Success - return repository information
+        wp_send_json_success( [
+            'name' => $repository_info['name'] ?? $repo,
+            'description' => $repository_info['description'] ?? '',
+            'html_url' => $repository_info['html_url'] ?? sprintf( 'https://github.com/%s/%s', $owner, $repo ),
+            'private' => $repository_info['private'] ?? false,
+            'fork' => $repository_info['fork'] ?? false,
+            'language' => $repository_info['language'] ?? 'Unknown',
+            'stargazers_count' => $repository_info['stargazers_count'] ?? 0,
+            'forks_count' => $repository_info['forks_count'] ?? 0
+        ] );
     }
 }

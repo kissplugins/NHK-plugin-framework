@@ -82,14 +82,20 @@ class RepositoryManager {
         if ( ! empty( $organization ) ) {
             $this->list_table->set_organization( $organization );
         }
-        
-        // Prepare list table items
-        $this->list_table->prepare_items();
+
+        // For progressive loading, we don't prepare items here
+        // Items will be loaded via AJAX
         
         ?>
         <div class="wrap">
             <h1><?php esc_html_e( 'KISS Smart Batch Installer', 'kiss-smart-batch-installer' ); ?></h1>
-            
+
+            <p>
+                <a href="<?php echo esc_url( admin_url( 'plugins.php?page=sbi-self-tests' ) ); ?>" class="button">
+                    <?php esc_html_e( 'Run Self Tests', 'kiss-smart-batch-installer' ); ?>
+                </a>
+            </p>
+
             <?php $this->render_organization_form( $organization ); ?>
             
             <?php if ( ! empty( $organization ) ): ?>
@@ -174,14 +180,39 @@ class RepositoryManager {
      */
     private function save_organization(): void {
         $organization = sanitize_text_field( $_POST['github_organization'] ?? '' );
-        
+
         if ( empty( $organization ) ) {
             add_settings_error( 'sbi_messages', 'organization_empty', __( 'Organization name cannot be empty.', 'kiss-smart-batch-installer' ), 'error' );
             return;
         }
-        
+
         update_option( 'sbi_github_organization', $organization );
-        add_settings_error( 'sbi_messages', 'organization_saved', __( 'GitHub organization saved successfully.', 'kiss-smart-batch-installer' ), 'success' );
+
+        // Also save fetch method if provided
+        if ( isset( $_POST['fetch_method'] ) ) {
+            $fetch_method = sanitize_text_field( $_POST['fetch_method'] );
+            if ( in_array( $fetch_method, [ 'api_with_fallback', 'web_only', 'api_only' ], true ) ) {
+                update_option( 'sbi_fetch_method', $fetch_method );
+            }
+        }
+
+        // Also save repository limit if provided
+        if ( isset( $_POST['repository_limit'] ) ) {
+            $repository_limit = (int) $_POST['repository_limit'];
+            if ( $repository_limit >= 1 && $repository_limit <= 50 ) {
+                update_option( 'sbi_repository_limit', $repository_limit );
+            }
+        }
+
+        // Also save skip plugin detection setting
+        $skip_detection = isset( $_POST['skip_plugin_detection'] ) ? 1 : 0;
+        update_option( 'sbi_skip_plugin_detection', $skip_detection );
+
+        // Also save debug AJAX setting
+        $debug_ajax = isset( $_POST['debug_ajax'] ) ? 1 : 0;
+        update_option( 'sbi_debug_ajax', $debug_ajax );
+
+        add_settings_error( 'sbi_messages', 'organization_saved', __( 'GitHub organization and settings saved successfully.', 'kiss-smart-batch-installer' ), 'success' );
     }
 
     /**
@@ -451,6 +482,92 @@ class RepositoryManager {
                                    placeholder="<?php esc_attr_e( 'e.g., wordpress, facebook, google', 'kiss-smart-batch-installer' ); ?>" />
                             <p class="description">
                                 <?php esc_html_e( 'Enter the GitHub organization name to fetch public repositories from.', 'kiss-smart-batch-installer' ); ?>
+                                <br><strong><?php esc_html_e( 'Note:', 'kiss-smart-batch-installer' ); ?></strong>
+                                <?php esc_html_e( 'The system will automatically fall back to web scraping if GitHub API rate limits are exceeded.', 'kiss-smart-batch-installer' ); ?>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="fetch_method"><?php esc_html_e( 'Fetch Method', 'kiss-smart-batch-installer' ); ?></label>
+                        </th>
+                        <td>
+                            <?php $fetch_method = get_option( 'sbi_fetch_method', 'web_only' ); ?>
+                            <select id="fetch_method" name="fetch_method">
+                                <option value="web_only" <?php selected( $fetch_method, 'web_only' ); ?>>
+                                    <?php esc_html_e( 'Web Scraping Only (Recommended - No Rate Limits)', 'kiss-smart-batch-installer' ); ?>
+                                </option>
+                                <option value="api_with_fallback" <?php selected( $fetch_method, 'api_with_fallback' ); ?>>
+                                    <?php esc_html_e( 'GitHub API with Web Fallback (May Be Unreliable)', 'kiss-smart-batch-installer' ); ?>
+                                </option>
+                                <option value="api_only" <?php selected( $fetch_method, 'api_only' ); ?>>
+                                    <?php esc_html_e( 'GitHub API Only (Not Recommended)', 'kiss-smart-batch-installer' ); ?>
+                                </option>
+                            </select>
+                            <p class="description">
+                                <?php esc_html_e( 'Web scraping is now the recommended method due to GitHub API reliability issues. It bypasses rate limits and provides consistent performance.', 'kiss-smart-batch-installer' ); ?>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="repository_limit"><?php esc_html_e( 'Repository Limit (Testing)', 'kiss-smart-batch-installer' ); ?></label>
+                        </th>
+                        <td>
+                            <?php $repository_limit = get_option( 'sbi_repository_limit', 1 ); ?>
+                            <input type="number"
+                                   id="repository_limit"
+                                   name="repository_limit"
+                                   value="<?php echo esc_attr( $repository_limit ); ?>"
+                                   min="1"
+                                   max="50"
+                                   class="small-text" />
+                            <p class="description">
+                                <?php esc_html_e( 'Limit the number of repositories to process for testing. Start with 1, then gradually increase (e.g., 2, 5, 10) once stable.', 'kiss-smart-batch-installer' ); ?>
+                                <br><strong><?php esc_html_e( 'Recommended:', 'kiss-smart-batch-installer' ); ?></strong>
+                                <?php esc_html_e( 'Use 1 for initial testing, then increase to 5-10 for normal use.', 'kiss-smart-batch-installer' ); ?>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="skip_plugin_detection"><?php esc_html_e( 'Skip Plugin Detection (Testing)', 'kiss-smart-batch-installer' ); ?></label>
+                        </th>
+                        <td>
+                            <?php $skip_detection = get_option( 'sbi_skip_plugin_detection', false ); ?>
+                            <label>
+                                <input type="checkbox"
+                                       id="skip_plugin_detection"
+                                       name="skip_plugin_detection"
+                                       value="1"
+                                       <?php checked( $skip_detection ); ?> />
+                                <?php esc_html_e( 'Skip plugin detection to test basic repository loading', 'kiss-smart-batch-installer' ); ?>
+                            </label>
+                            <p class="description">
+                                <?php esc_html_e( 'Enable this to bypass plugin detection and prevent hanging. Useful for testing basic repository fetching.', 'kiss-smart-batch-installer' ); ?>
+                                <br><strong><?php esc_html_e( 'Note:', 'kiss-smart-batch-installer' ); ?></strong>
+                                <?php esc_html_e( 'When enabled, all repositories will show as "Unknown" type.', 'kiss-smart-batch-installer' ); ?>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="debug_ajax"><?php esc_html_e( 'Debug AJAX (Development)', 'kiss-smart-batch-installer' ); ?></label>
+                        </th>
+                        <td>
+                            <?php $debug_ajax = get_option( 'sbi_debug_ajax', false ); ?>
+                            <label>
+                                <input type="checkbox"
+                                       id="debug_ajax"
+                                       name="debug_ajax"
+                                       value="1"
+                                       <?php checked( $debug_ajax ); ?> />
+                                <?php esc_html_e( 'Show AJAX debug panel with detailed logging', 'kiss-smart-batch-installer' ); ?>
+                            </label>
+                            <p class="description">
+                                <?php esc_html_e( 'Enable this to show a detailed debug panel that logs all AJAX requests, responses, and errors in real-time.', 'kiss-smart-batch-installer' ); ?>
+                                <br><strong><?php esc_html_e( 'Developer Tool:', 'kiss-smart-batch-installer' ); ?></strong>
+                                <?php esc_html_e( 'Useful for troubleshooting AJAX issues and monitoring system performance.', 'kiss-smart-batch-installer' ); ?>
                             </p>
                         </td>
                     </tr>
@@ -488,12 +605,64 @@ class RepositoryManager {
                     '<strong>' . esc_html( $organization ) . '</strong>'
                 );
                 ?>
+                <span id="sbi-loading-progress" style="font-size: 14px; font-weight: normal; margin-left: 10px; display: none;">
+                    <span class="spinner is-active" style="float: none; margin: 0 5px 0 0;"></span>
+                    <span id="sbi-progress-text"><?php esc_html_e( 'Loading repositories...', 'kiss-smart-batch-installer' ); ?></span>
+                </span>
             </h2>
 
-            <form method="post" id="sbi-repository-form">
+            <div id="sbi-initial-loading" style="text-align: center; padding: 40px;">
+                <span class="spinner is-active" style="float: none; margin: 0 10px 0 0;"></span>
+                <?php esc_html_e( 'Fetching repository list...', 'kiss-smart-batch-installer' ); ?>
+            </div>
+
+            <!-- AJAX Debug Panel (only show if debug setting is enabled) -->
+            <?php if ( get_option( 'sbi_debug_ajax', false ) ): ?>
+            <div id="sbi-debug-panel" style="display: none; margin: 20px 0; padding: 15px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px;">
+                <h4 style="margin: 0 0 10px 0; color: #856404;">🔍 AJAX Debug Information</h4>
+                <div id="sbi-debug-log" style="font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; background: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; border-radius: 3px;">
+                    <div class="debug-entry">Debug panel initialized...</div>
+                </div>
+                <button type="button" id="sbi-clear-debug" style="margin-top: 10px; padding: 5px 10px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer;">Clear Debug Log</button>
+                <button type="button" id="sbi-toggle-debug" style="margin-top: 10px; margin-left: 10px; padding: 5px 10px; background: #17a2b8; color: white; border: none; border-radius: 3px; cursor: pointer;">Hide Debug</button>
+            </div>
+            <?php endif; ?>
+
+            <form method="post" id="sbi-repository-form" style="display: none;">
                 <?php wp_nonce_field( 'sbi_bulk_action', 'sbi_bulk_nonce' ); ?>
                 <div style="width: 100%; overflow-x: auto;">
-                    <?php $this->list_table->display(); ?>
+                    <table class="wp-list-table widefat fixed striped">
+                        <thead>
+                            <tr>
+                                <?php foreach ( $this->list_table->get_columns() as $column_id => $column_name ): ?>
+                                    <th scope="col" class="manage-column column-<?php echo esc_attr( $column_id ); ?>">
+                                        <?php echo $column_name; ?>
+                                    </th>
+                                <?php endforeach; ?>
+                            </tr>
+                        </thead>
+                        <tbody id="sbi-repository-tbody">
+                            <!-- Repository rows will be inserted here progressively -->
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <?php foreach ( $this->list_table->get_columns() as $column_id => $column_name ): ?>
+                                    <th scope="col" class="manage-column column-<?php echo esc_attr( $column_id ); ?>">
+                                        <?php echo $column_name; ?>
+                                    </th>
+                                <?php endforeach; ?>
+                            </tr>
+                        </tfoot>
+                    </table>
+
+                    <div class="tablenav bottom">
+                        <div class="alignleft actions bulkactions">
+                            <?php $this->list_table->bulk_actions(); ?>
+                        </div>
+                        <div class="tablenav-pages">
+                            <span class="displaying-num" id="sbi-item-count">0 items</span>
+                        </div>
+                    </div>
                 </div>
             </form>
         </div>
@@ -571,6 +740,80 @@ class RepositoryManager {
                 min-width: 800px;
             }
         }
+
+        /* Progressive loading styles */
+        .sbi-loading-row {
+            opacity: 0.7;
+        }
+
+        .sbi-loading-indicator {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .sbi-status-scanning {
+            color: #0073aa;
+            font-size: 12px;
+        }
+
+        .sbi-actions-loading {
+            color: #666;
+            font-style: italic;
+            font-size: 12px;
+        }
+
+        .sbi-error-row {
+            background-color: #fef7f7;
+        }
+
+        #sbi-loading-progress {
+            color: #0073aa;
+        }
+
+        #sbi-initial-loading {
+            color: #666;
+            font-size: 16px;
+        }
+
+        /* Smooth transitions for row updates */
+        .sbi-loading-row td {
+            transition: all 0.3s ease;
+        }
+
+        /* Spinner adjustments */
+        .sbi-loading-indicator .spinner,
+        .sbi-status-scanning .spinner {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Debug panel styles */
+        .debug-entry {
+            margin: 2px 0;
+            padding: 2px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .debug-entry:last-child {
+            border-bottom: none;
+        }
+
+        .debug-info {
+            color: #0073aa;
+        }
+
+        .debug-success {
+            color: #46b450;
+        }
+
+        .debug-warning {
+            color: #ffb900;
+        }
+
+        .debug-error {
+            color: #dc3232;
+        }
         </style>
         <?php
     }
@@ -584,7 +827,348 @@ class RepositoryManager {
         jQuery(document).ready(function($) {
             // AJAX nonce
             var ajaxNonce = '<?php echo wp_create_nonce( 'sbi_ajax_nonce' ); ?>';
-            
+
+            // Progressive loading variables
+            var repositories = [];
+            var currentIndex = 0;
+            var totalRepositories = 0;
+            var isLoading = false;
+            var processingQueue = false;
+            var activeRequest = null;
+
+            // Debug functions (only if debug is enabled)
+            var debugEnabled = <?php echo get_option( 'sbi_debug_ajax', false ) ? 'true' : 'false'; ?>;
+
+            function debugLog(message, type = 'info') {
+                if (!debugEnabled) return;
+
+                var timestamp = new Date().toLocaleTimeString();
+                var typeClass = 'debug-' + type;
+                var typeIcon = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warning' ? '⚠️' : 'ℹ️';
+
+                var entry = $('<div class="debug-entry ' + typeClass + '">')
+                    .html('<span style="color: #666;">[' + timestamp + ']</span> ' + typeIcon + ' ' + message);
+
+                $('#sbi-debug-log').append(entry);
+                $('#sbi-debug-log').scrollTop($('#sbi-debug-log')[0].scrollHeight);
+
+                // Also log to console
+                console.log('SBI Debug [' + timestamp + ']:', message);
+
+                // Show debug panel if not visible
+                if (!$('#sbi-debug-panel').is(':visible')) {
+                    $('#sbi-debug-panel').show();
+                }
+            }
+
+            function debugAjaxCall(action, data, description) {
+                if (!debugEnabled) return;
+                debugLog('🔄 Starting AJAX call: ' + description + ' (action: ' + action + ')');
+                debugLog('📤 Request data: ' + JSON.stringify(data, null, 2));
+            }
+
+            function debugAjaxResponse(response, description) {
+                if (!debugEnabled) return;
+                if (response.success) {
+                    debugLog('✅ AJAX success: ' + description);
+                    debugLog('📥 Response data: ' + JSON.stringify(response.data, null, 2), 'success');
+                } else {
+                    debugLog('❌ AJAX error: ' + description + ' - ' + (response.data ? response.data.message : 'Unknown error'), 'error');
+                    debugLog('📥 Error response: ' + JSON.stringify(response, null, 2), 'error');
+                }
+            }
+
+            function debugAjaxFail(xhr, status, error, description) {
+                if (!debugEnabled) return;
+                debugLog('💥 AJAX failed: ' + description, 'error');
+                debugLog('📥 XHR status: ' + status + ', Error: ' + error, 'error');
+                debugLog('📥 Response text: ' + xhr.responseText, 'error');
+            }
+
+            // Debug panel controls (only if debug enabled)
+            if (debugEnabled) {
+                $('#sbi-clear-debug').click(function() {
+                    $('#sbi-debug-log').html('<div class="debug-entry">Debug log cleared...</div>');
+                });
+
+                $('#sbi-toggle-debug').click(function() {
+                    if ($('#sbi-debug-panel').is(':visible')) {
+                        $('#sbi-debug-panel').hide();
+                        $(this).text('Show Debug');
+                    } else {
+                        $('#sbi-debug-panel').show();
+                        $(this).text('Hide Debug');
+                    }
+                });
+
+                // Initialize debug
+                debugLog('🚀 KISS Smart Batch Installer debug initialized');
+            }
+
+            // Start progressive loading if organization is set
+            var organization = '<?php echo esc_js( get_option( 'sbi_github_organization', '' ) ); ?>';
+            if (organization) {
+                startProgressiveLoading(organization);
+            }
+
+            function startProgressiveLoading(org) {
+                if (isLoading) {
+                    debugLog('⏸️ Already loading, skipping', 'warning');
+                    return;
+                }
+                isLoading = true;
+
+                debugLog('🚀 Starting progressive loading for organization: ' + org);
+                $('#sbi-initial-loading').show();
+                $('#sbi-repository-form').hide();
+
+                // First, fetch the repository list (using saved limit setting)
+                var repositoryLimit = <?php echo (int) get_option( 'sbi_repository_limit', 1 ); ?>;
+                var requestData = {
+                    action: 'sbi_fetch_repository_list',
+                    organization: org,
+                    limit: repositoryLimit,
+                    nonce: ajaxNonce
+                };
+
+                debugAjaxCall('sbi_fetch_repository_list', requestData, 'Fetch repository list');
+
+                $.post(ajaxurl, requestData)
+                .done(function(response) {
+                    debugAjaxResponse(response, 'Fetch repository list');
+                    if (response.success) {
+                        repositories = response.data.repositories;
+                        totalRepositories = repositories.length;
+                        debugLog('📊 Found ' + totalRepositories + ' repositories to process');
+
+                        if (totalRepositories === 0) {
+                            debugLog('⚠️ No repositories found', 'warning');
+                            showNoRepositories();
+                            return;
+                        }
+
+                        // Hide initial loading and show the table
+                        $('#sbi-initial-loading').hide();
+                        $('#sbi-repository-form').show();
+                        $('#sbi-loading-progress').show();
+
+                        // Cancel any existing requests and reset state
+                        if (activeRequest) {
+                            debugLog('🛑 Aborting existing request');
+                            activeRequest.abort();
+                            activeRequest = null;
+                        }
+                        processingQueue = false;
+
+                        // Start processing repositories one by one (truly sequential)
+                        currentIndex = 0;
+                        debugLog('🔄 Starting progressive loading of ' + totalRepositories + ' repositories (limited to ' + repositoryLimit + ')');
+
+                        // Show user how many repositories we're processing
+                        $('#sbi-progress-text').text('Processing ' + totalRepositories + ' repositories (limited to ' + repositoryLimit + ')...');
+
+                        processNextRepository();
+                    } else {
+                        debugLog('❌ Failed to fetch repositories: ' + (response.data ? response.data.message : 'Unknown error'), 'error');
+                        showError('Failed to fetch repositories: ' + (response.data ? response.data.message : 'Unknown error'));
+                    }
+                })
+                .fail(function(xhr, status, error) {
+                    debugAjaxFail(xhr, status, error, 'Fetch repository list');
+                    showError('Failed to fetch repositories. Please try again.');
+                });
+            }
+
+            function processNextRepository() {
+                // Prevent multiple simultaneous processing - be very strict
+                if (processingQueue || activeRequest !== null) {
+                    debugLog('⏸️ Skipping processNextRepository - already processing', 'warning');
+                    return;
+                }
+
+                if (currentIndex >= totalRepositories) {
+                    // All repositories processed
+                    debugLog('🎉 All repositories processed successfully', 'success');
+                    $('#sbi-loading-progress').hide();
+                    updateItemCount();
+                    isLoading = false;
+                    processingQueue = false;
+                    activeRequest = null;
+                    return;
+                }
+
+                processingQueue = true;
+                var repo = repositories[currentIndex];
+                var progress = Math.round(((currentIndex + 1) / totalRepositories) * 100);
+
+                debugLog('🔄 Processing repository ' + (currentIndex + 1) + '/' + totalRepositories + ': ' + repo.name);
+
+                // Update progress
+                $('#sbi-progress-text').text('Processing ' + repo.name + ' (' + (currentIndex + 1) + '/' + totalRepositories + ')');
+
+                // Add loading row for current repository only
+                addLoadingRow(repo);
+
+                // Process the repository (strictly one at a time)
+                var requestData = {
+                    action: 'sbi_process_repository',
+                    repository: repo,
+                    nonce: ajaxNonce,
+                    timeout: 60000 // Increased to 60 second timeout
+                };
+
+                debugAjaxCall('sbi_process_repository', requestData, 'Process repository: ' + repo.name);
+
+                activeRequest = $.post(ajaxurl, requestData)
+                .done(function(response) {
+                    debugAjaxResponse(response, 'Process repository: ' + repo.name);
+                    if (response.success) {
+                        debugLog('✅ Successfully processed repository: ' + repo.name, 'success');
+                        // Replace loading row with actual data
+                        replaceLoadingRow(repo.full_name, response.data.repository);
+                    } else {
+                        debugLog('❌ Error processing repository: ' + repo.name + ' - ' + (response.data.message || 'Unknown error'), 'error');
+                        // Show error in the row
+                        showRepositoryError(repo.full_name, response.data.message || 'Unknown error');
+                    }
+                })
+                .fail(function(xhr, status, error) {
+                    debugAjaxFail(xhr, status, error, 'Process repository: ' + repo.name);
+                    var errorMsg = 'Request failed';
+                    if (status === 'timeout') {
+                        errorMsg = 'Request timed out after 60 seconds';
+                        debugLog('⏰ Repository processing timed out: ' + repo.name, 'error');
+                    } else if (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) {
+                        errorMsg = xhr.responseJSON.data.message;
+                    }
+                    showRepositoryError(repo.full_name, errorMsg);
+                })
+                .always(function() {
+                    // Always move to next repository regardless of success/failure
+                    debugLog('🏁 Finished processing repository: ' + repo.full_name);
+                    activeRequest = null;
+                    processingQueue = false;
+                    currentIndex++;
+
+                    // Wait much longer between requests to be very conservative
+                    debugLog('⏳ Waiting 5 seconds before next repository...');
+                    setTimeout(function() {
+                        processNextRepository();
+                    }, 5000); // Increased to 5 seconds delay
+                });
+            }
+
+            function addLoadingRow(repo) {
+                var rowId = 'repo-' + repo.full_name.replace(/[^a-zA-Z0-9]/g, '-');
+                var loadingRow = $('<tr>').attr('id', rowId).addClass('sbi-loading-row');
+
+                // Add cells for each column
+                var columns = <?php echo json_encode( array_keys( $this->list_table->get_columns() ) ); ?>;
+                columns.forEach(function(column) {
+                    var cell = $('<td>').addClass('column-' + column);
+
+                    if (column === 'cb') {
+                        // Empty checkbox cell
+                    } else if (column === 'name') {
+                        cell.html('<strong>' + escapeHtml(repo.name) + '</strong><div class="sbi-loading-indicator"><span class="spinner is-active" style="float: none; margin: 0 5px 0 0;"></span>Scanning for WordPress plugin...</div>');
+                    } else if (column === 'description') {
+                        cell.text(repo.description || 'No description available');
+                    } else if (column === 'plugin_status') {
+                        cell.html('<span class="sbi-status-scanning"><span class="spinner is-active" style="float: none; margin: 0 5px 0 0;"></span>Scanning...</span>');
+                    } else if (column === 'actions') {
+                        cell.html('<span class="sbi-actions-loading">Loading...</span>');
+                    }
+
+                    loadingRow.append(cell);
+                });
+
+                $('#sbi-repository-tbody').append(loadingRow);
+                updateItemCount();
+            }
+
+            function replaceLoadingRow(repoFullName, processedRepo) {
+                var rowId = 'repo-' + repoFullName.replace(/[^a-zA-Z0-9]/g, '-');
+
+                debugLog('🔄 Replacing loading row for: ' + repoFullName + ' (ID: ' + rowId + ')');
+
+                // Get the rendered row HTML
+                var requestData = {
+                    action: 'sbi_render_repository_row',
+                    repository: processedRepo,
+                    nonce: ajaxNonce
+                };
+
+                debugAjaxCall('sbi_render_repository_row', requestData, 'Render row for: ' + repoFullName);
+
+                $.post(ajaxurl, requestData)
+                .done(function(response) {
+                    debugAjaxResponse(response, 'Render row for: ' + repoFullName);
+                    if (response.success) {
+                        debugLog('✅ Successfully rendered row for: ' + repoFullName, 'success');
+                        $('#' + rowId).replaceWith(response.data.row_html);
+                        debugLog('🔄 Row replaced in DOM for: ' + repoFullName);
+                    } else {
+                        debugLog('❌ Failed to render row for: ' + repoFullName + ' - ' + (response.data ? response.data.message : 'Unknown error'), 'error');
+                        showRepositoryError(repoFullName, 'Failed to render repository row');
+                    }
+                })
+                .fail(function(xhr, status, error) {
+                    debugAjaxFail(xhr, status, error, 'Render row for: ' + repoFullName);
+                    showRepositoryError(repoFullName, 'AJAX error rendering row');
+                });
+            }
+
+            function showRepositoryError(repoFullName, errorMessage) {
+                var rowId = 'repo-' + repoFullName.replace(/[^a-zA-Z0-9]/g, '-');
+                var errorRow = $('#' + rowId);
+
+                errorRow.find('.sbi-loading-indicator, .sbi-status-scanning, .sbi-actions-loading').html(
+                    '<span style="color: #d63638;">Error: ' + escapeHtml(errorMessage) + '</span>'
+                );
+                errorRow.removeClass('sbi-loading-row').addClass('sbi-error-row');
+            }
+
+            function showNoRepositories() {
+                $('#sbi-initial-loading').hide();
+                $('#sbi-repository-form').show();
+                $('#sbi-repository-tbody').html('<tr><td colspan="5" style="text-align: center; padding: 40px;">No repositories found for this organization.</td></tr>');
+                isLoading = false;
+            }
+
+            function showError(message) {
+                $('#sbi-initial-loading').hide();
+                $('#sbi-loading-progress').hide();
+
+                var errorHtml = '<p>' + escapeHtml(message) + '</p>';
+
+                // Add helpful message for rate limiting
+                if (message.indexOf('rate limit') !== -1) {
+                    errorHtml += '<p><strong>Tip:</strong> GitHub limits unauthenticated requests to 60 per hour. ';
+                    errorHtml += 'Try again in a few minutes, or consider setting up a GitHub token for higher limits.</p>';
+                    errorHtml += '<p><a href="https://docs.github.com/en/rest/overview/resources-in-the-rest-api#rate-limiting" target="_blank">Learn more about GitHub rate limits</a></p>';
+                }
+
+                var errorDiv = $('<div class="notice notice-error">' + errorHtml + '</div>');
+                $('.sbi-repository-list h2').after(errorDiv);
+                isLoading = false;
+            }
+
+            function updateItemCount() {
+                var count = $('#sbi-repository-tbody tr').length;
+                $('#sbi-item-count').text(count + ' items');
+            }
+
+            function escapeHtml(text) {
+                var map = {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#039;'
+                };
+                return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+            }
+
             // Install plugin button
             $(document).on('click', '.sbi-install-plugin', function() {
                 var button = $(this);
@@ -593,6 +1177,12 @@ class RepositoryManager {
 
                 button.prop('disabled', true).text('<?php esc_html_e( 'Installing...', 'kiss-smart-batch-installer' ); ?>');
 
+                // Add debug entry for install start
+                if (window.sbiDebug) {
+                    window.sbiDebug.addEntry('info', 'Install Started',
+                        'Starting installation for ' + owner + '/' + repo);
+                }
+
                 $.post(ajaxurl, {
                     action: 'sbi_install_plugin',
                     repository: repo,
@@ -600,14 +1190,75 @@ class RepositoryManager {
                     activate: false,
                     nonce: ajaxNonce
                 }, function(response) {
+                    // Add debug information
+                    if (window.sbiDebug && response.data && response.data.debug_steps) {
+                        response.data.debug_steps.forEach(function(step) {
+                            var level = step.status === 'failed' ? 'error' :
+                                       step.status === 'completed' ? 'success' : 'info';
+                            var message = step.step + ': ' + (step.message || step.status);
+                            if (step.error) {
+                                message += ' - Error: ' + step.error;
+                            }
+                            if (step.time) {
+                                message += ' (' + step.time + 'ms)';
+                            }
+                            window.sbiDebug.addEntry(level, 'Install Step', message);
+                        });
+                    }
+
                     if (response.success) {
+                        if (window.sbiDebug) {
+                            var totalTime = response.data.total_time || 'unknown';
+                            window.sbiDebug.addEntry('success', 'Install Completed',
+                                'Successfully installed ' + owner + '/' + repo + ' in ' + totalTime + 'ms');
+                        }
+
                         button.text('<?php esc_html_e( 'Installed', 'kiss-smart-batch-installer' ); ?>').removeClass('button-primary').addClass('button-secondary');
                         // Refresh the page to update status
                         location.reload();
                     } else {
-                        alert(response.data.message);
+                        if (window.sbiDebug) {
+                            window.sbiDebug.addEntry('error', 'Install Failed',
+                                'Installation failed for ' + owner + '/' + repo + ': ' + (response.data.message || 'Unknown error'));
+
+                            // Add troubleshooting information if available
+                            if (response.data.troubleshooting) {
+                                var troubleshooting = response.data.troubleshooting;
+                                if (troubleshooting.check_repository_exists) {
+                                    window.sbiDebug.addEntry('info', 'Troubleshooting',
+                                        'Check if repository exists: ' + troubleshooting.check_repository_exists);
+                                }
+                                if (troubleshooting.verify_repository_public) {
+                                    window.sbiDebug.addEntry('info', 'Troubleshooting',
+                                        troubleshooting.verify_repository_public);
+                                }
+                                if (troubleshooting.check_spelling) {
+                                    window.sbiDebug.addEntry('info', 'Troubleshooting',
+                                        troubleshooting.check_spelling);
+                                }
+                            }
+                        }
+
+                        // Enhanced error message for 404 errors
+                        var errorMessage = response.data.message || 'Unknown error';
+                        if (errorMessage.indexOf('404') !== -1 || errorMessage.indexOf('not found') !== -1) {
+                            errorMessage += '\n\nTroubleshooting:\n';
+                            errorMessage += '• Check if the repository exists at: https://github.com/' + owner + '/' + repo + '\n';
+                            errorMessage += '• Verify the repository is public (not private)\n';
+                            errorMessage += '• Check that owner and repository names are spelled correctly';
+                        }
+
+                        alert(errorMessage);
                         button.prop('disabled', false).text('<?php esc_html_e( 'Install', 'kiss-smart-batch-installer' ); ?>');
                     }
+                }).fail(function(xhr, status, error) {
+                    if (window.sbiDebug) {
+                        window.sbiDebug.addEntry('error', 'Install AJAX Failed',
+                            'AJAX request failed for ' + owner + '/' + repo + ': ' + error);
+                    }
+
+                    alert('<?php esc_html_e( 'Installation request failed. Please try again.', 'kiss-smart-batch-installer' ); ?>');
+                    button.prop('disabled', false).text('<?php esc_html_e( 'Install', 'kiss-smart-batch-installer' ); ?>');
                 });
             });
             

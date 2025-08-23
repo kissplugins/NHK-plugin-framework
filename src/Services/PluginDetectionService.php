@@ -59,9 +59,21 @@ class PluginDetectionService {
         if ( empty( $repository['full_name'] ) ) {
             return new WP_Error( 'invalid_repository', __( 'Repository data is invalid.', 'kiss-smart-batch-installer' ) );
         }
-        
+
+        // TEMPORARY: Skip plugin detection for testing to prevent hanging
+        $skip_detection = get_option( 'sbi_skip_plugin_detection', false );
+        if ( $skip_detection ) {
+            return [
+                'is_plugin' => false,
+                'plugin_file' => '',
+                'plugin_data' => [],
+                'scan_method' => 'skipped_for_testing',
+                'error' => null,
+            ];
+        }
+
         $cache_key = 'sbi_plugin_detection_' . sanitize_key( $repository['full_name'] );
-        
+
         // Check cache first unless force refresh
         if ( ! $force_refresh ) {
             $cached_result = get_transient( $cache_key );
@@ -70,12 +82,33 @@ class PluginDetectionService {
             }
         }
         
-        // Scan repository for WordPress plugin files
-        $detection_result = $this->scan_repository_for_plugin( $repository );
-        
+        // Scan repository for WordPress plugin files with timeout protection
+        try {
+            $start_time = microtime( true );
+            $detection_result = $this->scan_repository_for_plugin( $repository );
+            $end_time = microtime( true );
+
+            // Log slow detections for debugging
+            if ( ( $end_time - $start_time ) > 5 ) {
+                error_log( sprintf( 'SBI: Slow plugin detection for %s took %.2f seconds', $repository['full_name'], $end_time - $start_time ) );
+            }
+
+        } catch ( Exception $e ) {
+            error_log( sprintf( 'SBI: Plugin detection failed for %s: %s', $repository['full_name'], $e->getMessage() ) );
+
+            // Return a safe fallback result
+            $detection_result = [
+                'is_plugin' => false,
+                'plugin_file' => '',
+                'plugin_data' => [],
+                'scan_method' => 'failed',
+                'error' => $e->getMessage(),
+            ];
+        }
+
         // Cache the result
         set_transient( $cache_key, $detection_result, self::CACHE_EXPIRATION );
-        
+
         return $detection_result;
     }
     
@@ -93,25 +126,122 @@ class PluginDetectionService {
             'scan_method' => '',
             'error' => null,
         ];
-        
-        // Try to find main plugin file by common patterns
-        $potential_files = $this->get_potential_plugin_files( $repository );
-        
-        foreach ( $potential_files as $file_path ) {
+
+        // First try fast detection using raw.githubusercontent.com for common patterns
+        try {
+            $fast_result = $this->fast_plugin_detection( $repository );
+            if ( $fast_result['is_plugin'] ) {
+                return $fast_result;
+            }
+        } catch ( Exception $e ) {
+            error_log( sprintf( 'SBI: Fast detection failed for %s: %s', $repository['full_name'], $e->getMessage() ) );
+        }
+
+        // Fallback to comprehensive scan if fast detection fails
+        try {
+            $potential_files = $this->get_potential_plugin_files( $repository );
+
+            foreach ( $potential_files as $file_path ) {
+                $plugin_data = $this->scan_file_for_plugin_headers( $repository, $file_path );
+
+                if ( ! is_wp_error( $plugin_data ) && ! empty( $plugin_data ) ) {
+                    $result['is_plugin'] = true;
+                    $result['plugin_file'] = $file_path;
+                    $result['plugin_data'] = $plugin_data;
+                    $result['scan_method'] = 'header_scan';
+                    break;
+                }
+            }
+        } catch ( Exception $e ) {
+            error_log( sprintf( 'SBI: Comprehensive scan failed for %s: %s', $repository['full_name'], $e->getMessage() ) );
+            $result['error'] = $e->getMessage();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Fast plugin detection using raw.githubusercontent.com URLs.
+     * Tries the most likely plugin file patterns first for speed.
+     *
+     * @param array $repository Repository data.
+     * @return array Detection result.
+     */
+    private function fast_plugin_detection( array $repository ): array {
+        $result = [
+            'is_plugin' => false,
+            'plugin_file' => '',
+            'plugin_data' => [],
+            'scan_method' => 'fast_raw_detection',
+            'error' => null,
+        ];
+
+        $repo_name = $repository['name'] ?? '';
+        if ( empty( $repo_name ) ) {
+            return $result;
+        }
+
+        // Generate most likely plugin file names based on repository name
+        $likely_files = $this->get_most_likely_plugin_files( $repo_name );
+
+        // Try each likely file using direct raw.githubusercontent.com URLs
+        foreach ( $likely_files as $file_path ) {
+            if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                error_log( "SBI Fast Detection: Trying {$file_path} for {$repository['full_name']}" );
+            }
+
             $plugin_data = $this->scan_file_for_plugin_headers( $repository, $file_path );
-            
+
             if ( ! is_wp_error( $plugin_data ) && ! empty( $plugin_data ) ) {
                 $result['is_plugin'] = true;
                 $result['plugin_file'] = $file_path;
                 $result['plugin_data'] = $plugin_data;
-                $result['scan_method'] = 'header_scan';
+
+                if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                    error_log( "SBI Fast Detection: Found plugin in {$file_path} for {$repository['full_name']}" );
+                }
+
                 break;
             }
         }
-        
+
         return $result;
     }
-    
+
+    /**
+     * Get the most likely plugin file names based on repository name.
+     * Optimized for speed - only the most common patterns.
+     *
+     * @param string $repo_name Repository name.
+     * @return array Array of most likely file paths.
+     */
+    private function get_most_likely_plugin_files( string $repo_name ): array {
+        $likely_files = [];
+
+        // Pattern 1: Exact repository name
+        $likely_files[] = $repo_name . '.php';
+
+        // Pattern 2: Lowercase repository name
+        $likely_files[] = strtolower( $repo_name ) . '.php';
+
+        // Pattern 3: Handle KISS plugin naming patterns (most common for kissplugins)
+        if ( strpos( $repo_name, 'KISS-' ) === 0 ) {
+            $kiss_name = substr( $repo_name, 5 ); // Remove 'KISS-' prefix
+            $likely_files[] = 'KISS-' . strtolower( $kiss_name ) . '.php';
+            $likely_files[] = strtolower( $kiss_name ) . '.php';
+        }
+
+        // Pattern 4: Replace hyphens with underscores
+        $likely_files[] = str_replace( '-', '_', strtolower( $repo_name ) ) . '.php';
+
+        // Pattern 5: Common WordPress plugin file names
+        $likely_files[] = 'plugin.php';
+        $likely_files[] = 'index.php';
+
+        // Remove duplicates and return only the first 5 most likely
+        return array_unique( array_slice( $likely_files, 0, 5 ) );
+    }
+
     /**
      * Get potential plugin file paths to scan.
      *
@@ -175,7 +305,7 @@ class PluginDetectionService {
         );
 
         $response = wp_remote_get( $contents_url, [
-            'timeout' => 30,
+            'timeout' => 10, // Reduced timeout to prevent hanging
             'headers' => [
                 'User-Agent' => 'WordPress/' . get_bloginfo( 'version' ) . '; ' . home_url(),
             ],
@@ -284,7 +414,7 @@ class PluginDetectionService {
     }
     
     /**
-     * Get file content from GitHub repository.
+     * Get file content from GitHub repository using raw.githubusercontent.com.
      *
      * @param array  $repository Repository data.
      * @param string $file_path  File path.
@@ -293,41 +423,66 @@ class PluginDetectionService {
     private function get_file_content( array $repository, string $file_path ) {
         $owner_repo = $repository['full_name'] ?? '';
         $branch = $repository['default_branch'] ?? 'main';
-        
+
         if ( empty( $owner_repo ) ) {
             return new WP_Error( 'invalid_repository', __( 'Repository name is missing.', 'kiss-smart-batch-installer' ) );
         }
-        
-        // GitHub raw content URL
-        $url = sprintf( 
+
+        // Check cache first for file content
+        $cache_key = 'sbi_file_content_' . sanitize_key( $owner_repo . '_' . $branch . '_' . $file_path );
+        $cached_content = get_transient( $cache_key );
+        if ( false !== $cached_content ) {
+            return $cached_content;
+        }
+
+        // GitHub raw content URL - this bypasses API rate limits completely
+        $url = sprintf(
             'https://raw.githubusercontent.com/%s/%s/%s',
             $owner_repo,
             $branch,
             $file_path
         );
-        
+
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( "SBI: Fetching file content from: {$url}" );
+        }
+
         $args = [
-            'timeout' => 10,
+            'timeout' => 8, // Reduced timeout to prevent hanging
             'headers' => [
                 'User-Agent' => self::USER_AGENT,
             ],
         ];
         
         $response = wp_remote_get( $url, $args );
-        
+
         if ( is_wp_error( $response ) ) {
-            return $response;
+            $error = new WP_Error( 'file_fetch_failed', sprintf( __( 'Failed to fetch file: %s', 'kiss-smart-batch-installer' ), $response->get_error_message() ) );
+            // Cache the error for a short time to avoid repeated failed requests
+            set_transient( $cache_key, $error, 300 ); // 5 minutes
+            return $error;
         }
-        
+
         $response_code = wp_remote_retrieve_response_code( $response );
         if ( 200 !== $response_code ) {
-            return new WP_Error( 
-                'file_not_found', 
-                sprintf( __( 'File not found: %s (HTTP %d)', 'kiss-smart-batch-installer' ), $file_path, $response_code )
-            );
+            $error = new WP_Error( 'file_not_found', sprintf( __( 'File not found: %s (HTTP %d)', 'kiss-smart-batch-installer' ), $file_path, $response_code ) );
+            // Cache 404s for a short time to avoid repeated requests for non-existent files
+            if ( 404 === $response_code ) {
+                set_transient( $cache_key, $error, 600 ); // 10 minutes
+            }
+            return $error;
         }
-        
-        return wp_remote_retrieve_body( $response );
+
+        $file_content = wp_remote_retrieve_body( $response );
+
+        // Cache successful file content for 1 hour
+        set_transient( $cache_key, $file_content, HOUR_IN_SECONDS );
+
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( "SBI: Successfully fetched " . strlen( $file_content ) . " bytes from {$url}" );
+        }
+
+        return $file_content;
     }
     
     /**
@@ -414,14 +569,44 @@ class PluginDetectionService {
     public function clear_cache( string $repository_name = '' ): bool {
         if ( ! empty( $repository_name ) ) {
             $cache_key = 'sbi_plugin_detection_' . sanitize_key( $repository_name );
-            return delete_transient( $cache_key );
+            delete_transient( $cache_key );
+
+            // Also clear any file content cache for this repository
+            $this->clear_file_content_cache( $repository_name );
+
+            return true;
         }
-        
+
         // Clear all plugin detection transients
         global $wpdb;
         $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_sbi_plugin_detection_%'" );
         $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_sbi_plugin_detection_%'" );
-        
+
+        // Clear all file content cache
+        $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_sbi_file_content_%'" );
+        $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_sbi_file_content_%'" );
+
+        return true;
+    }
+
+    /**
+     * Clear file content cache for a specific repository.
+     *
+     * @param string $repository_name Repository name (owner/repo format).
+     * @return bool True on success.
+     */
+    private function clear_file_content_cache( string $repository_name ): bool {
+        global $wpdb;
+        $safe_repo_name = sanitize_key( str_replace( '/', '_', $repository_name ) );
+        $wpdb->query( $wpdb->prepare(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
+            '_transient_sbi_file_content_' . $safe_repo_name . '_%'
+        ) );
+        $wpdb->query( $wpdb->prepare(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
+            '_transient_timeout_sbi_file_content_' . $safe_repo_name . '_%'
+        ) );
+
         return true;
     }
 
@@ -468,5 +653,74 @@ class PluginDetectionService {
         }
 
         return $results;
+    }
+
+    /**
+     * Test plugin detection for a specific repository and file.
+     * Useful for debugging and testing specific cases like:
+     * https://raw.githubusercontent.com/kissplugins/KISS-Smart-Batch-Installer/main/KISS-smart-batch-installer.php
+     *
+     * @param string $owner Repository owner.
+     * @param string $repo Repository name.
+     * @param string $file_path Optional specific file path to test.
+     * @return array Test result with detailed information.
+     */
+    public function test_plugin_detection( string $owner, string $repo, string $file_path = '' ): array {
+        $repository = [
+            'full_name' => $owner . '/' . $repo,
+            'name' => $repo,
+            'default_branch' => 'main',
+        ];
+
+        $result = [
+            'repository' => $repository,
+            'test_timestamp' => current_time( 'mysql' ),
+            'tests' => [],
+        ];
+
+        if ( ! empty( $file_path ) ) {
+            // Test specific file (like KISS-smart-batch-installer.php)
+            $test_result = [
+                'file_path' => $file_path,
+                'method' => 'specific_file_test',
+                'raw_url' => sprintf(
+                    'https://raw.githubusercontent.com/%s/main/%s',
+                    $repository['full_name'],
+                    $file_path
+                ),
+            ];
+
+            $plugin_data = $this->scan_file_for_plugin_headers( $repository, $file_path );
+
+            if ( is_wp_error( $plugin_data ) ) {
+                $test_result['success'] = false;
+                $test_result['error'] = $plugin_data->get_error_message();
+            } else {
+                $test_result['success'] = ! empty( $plugin_data );
+                $test_result['plugin_data'] = $plugin_data;
+            }
+
+            $result['tests'][] = $test_result;
+        } else {
+            // Test fast detection
+            $fast_result = $this->fast_plugin_detection( $repository );
+            $result['tests'][] = [
+                'method' => 'fast_detection',
+                'success' => $fast_result['is_plugin'],
+                'plugin_file' => $fast_result['plugin_file'],
+                'plugin_data' => $fast_result['plugin_data'],
+            ];
+
+            // Test full detection
+            $full_result = $this->detect_plugin( $repository, true );
+            $result['tests'][] = [
+                'method' => 'full_detection',
+                'success' => ! is_wp_error( $full_result ) && $full_result['is_plugin'],
+                'plugin_file' => $full_result['plugin_file'] ?? '',
+                'plugin_data' => $full_result['plugin_data'] ?? [],
+            ];
+        }
+
+        return $result;
     }
 }

@@ -41,68 +41,98 @@ class PluginInstallationService {
      * @return array|WP_Error Installation result or error.
      */
     public function install_plugin( string $owner, string $repo, string $branch = 'main' ) {
+        error_log( sprintf( 'SBI INSTALL SERVICE: Starting install_plugin for %s/%s (branch: %s)', $owner, $repo, $branch ) );
+
         if ( empty( $owner ) || empty( $repo ) ) {
+            error_log( 'SBI INSTALL SERVICE: Invalid parameters - owner or repo empty' );
             return new WP_Error( 'invalid_params', __( 'Owner and repository name are required.', 'kiss-smart-batch-installer' ) );
         }
-        
+
         // Check if user has permission to install plugins
         if ( ! current_user_can( 'install_plugins' ) ) {
+            error_log( 'SBI INSTALL SERVICE: Insufficient permissions for current user' );
             return new WP_Error( 'insufficient_permissions', __( 'You do not have permission to install plugins.', 'kiss-smart-batch-installer' ) );
         }
-        
+
+        error_log( 'SBI INSTALL SERVICE: Permission check passed' );
+
         // Get repository information
-        $repo_info = $this->github_service->get_repository_info( $owner, $repo );
+        error_log( 'SBI INSTALL SERVICE: Getting repository information from GitHub' );
+        $repo_info = $this->github_service->get_repository( $owner, $repo );
         if ( is_wp_error( $repo_info ) ) {
+            error_log( sprintf( 'SBI INSTALL SERVICE: Failed to get repository info: %s', $repo_info->get_error_message() ) );
             return $repo_info;
         }
-        
+
+        error_log( 'SBI INSTALL SERVICE: Repository information retrieved successfully' );
+
         // Build download URL for the repository ZIP
-        $download_url = sprintf( 'https://github.com/%s/%s/archive/refs/heads/%s.zip', 
-            urlencode( $owner ), 
-            urlencode( $repo ), 
-            urlencode( $branch ) 
+        $download_url = sprintf( 'https://github.com/%s/%s/archive/refs/heads/%s.zip',
+            urlencode( $owner ),
+            urlencode( $repo ),
+            urlencode( $branch )
         );
-        
-        // Debug logging
-        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-            error_log( 'KISS Smart Batch Installer: Installing plugin from: ' . $download_url );
-        }
+
+        error_log( sprintf( 'SBI INSTALL SERVICE: Download URL: %s', $download_url ) );
         
         // Include necessary WordPress files
+        error_log( 'SBI INSTALL SERVICE: Including WordPress upgrader files' );
         if ( ! class_exists( 'Plugin_Upgrader' ) ) {
             require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
         }
-        
+
         // Create a custom skin to capture output
+        error_log( 'SBI INSTALL SERVICE: Creating upgrader skin' );
         $skin = new SBI_Plugin_Upgrader_Skin();
-        
+
         // Create upgrader instance
+        error_log( 'SBI INSTALL SERVICE: Creating Plugin_Upgrader instance' );
         $upgrader = new Plugin_Upgrader( $skin );
-        
+
         // Install the plugin
+        error_log( sprintf( 'SBI INSTALL SERVICE: Starting plugin installation from %s', $download_url ) );
         $result = $upgrader->install( $download_url );
-        
+
+        error_log( sprintf( 'SBI INSTALL SERVICE: Installation result: %s',
+            is_wp_error( $result ) ? 'WP_Error: ' . $result->get_error_message() :
+            ( $result ? 'Success' : 'Failed (false)' ) ) );
+
         if ( is_wp_error( $result ) ) {
+            error_log( sprintf( 'SBI INSTALL SERVICE: Installation failed with WP_Error: %s', $result->get_error_message() ) );
             return $result;
         }
-        
+
         if ( ! $result ) {
+            error_log( 'SBI INSTALL SERVICE: Installation failed - upgrader returned false' );
+            $messages = $skin->get_messages();
+            error_log( sprintf( 'SBI INSTALL SERVICE: Upgrader messages: %s', implode( '; ', $messages ) ) );
             return new WP_Error( 'installation_failed', __( 'Plugin installation failed.', 'kiss-smart-batch-installer' ) );
         }
-        
+
         // Get the installed plugin file
+        error_log( 'SBI INSTALL SERVICE: Getting plugin file information' );
         $plugin_file = $upgrader->plugin_info();
-        
+
+        error_log( sprintf( 'SBI INSTALL SERVICE: Plugin file detected: %s', $plugin_file ?: 'none' ) );
+
         if ( ! $plugin_file ) {
+            error_log( 'SBI INSTALL SERVICE: Plugin file could not be determined' );
+            $messages = $skin->get_messages();
+            error_log( sprintf( 'SBI INSTALL SERVICE: Upgrader messages: %s', implode( '; ', $messages ) ) );
             return new WP_Error( 'plugin_file_not_found', __( 'Plugin was installed but plugin file could not be determined.', 'kiss-smart-batch-installer' ) );
         }
         
+        $messages = $skin->get_messages();
+        error_log( sprintf( 'SBI INSTALL SERVICE: Installation completed successfully for %s/%s', $owner, $repo ) );
+        error_log( sprintf( 'SBI INSTALL SERVICE: Plugin file: %s', $plugin_file ) );
+        error_log( sprintf( 'SBI INSTALL SERVICE: Messages: %s', implode( '; ', $messages ) ) );
+
         return [
             'success' => true,
             'plugin_file' => $plugin_file,
             'plugin_name' => $repo,
             'download_url' => $download_url,
-            'messages' => $skin->get_messages(),
+            'messages' => $messages,
         ];
     }
     
