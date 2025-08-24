@@ -21,9 +21,117 @@ class StateManager {
     protected array $states = [];
 
     /**
+     * Allowed transitions cache.
+     *
+     * @var array<string, array<string>>
+     */
+    private array $allowed_transitions = [];
+
+    /**
      * Cache expiration time (5 minutes).
      */
     private const CACHE_EXPIRATION = 5 * MINUTE_IN_SECONDS;
+
+    /**
+     * Event log transient TTL (1 day) and max entries per repo.
+     */
+    private const EVENT_LOG_TTL = DAY_IN_SECONDS;
+    private const EVENT_LOG_LIMIT = 30;
+
+    /**
+     * Allowed state transitions map.
+     * NOTE: Keep conservative; refresh_state() uses force to avoid breaking flows.
+     * UNKNOWN -> CHECKING/AVAILABLE/NOT_PLUGIN/ERROR/INSTALLED_INACTIVE/INSTALLED_ACTIVE
+     * CHECKING -> AVAILABLE/NOT_PLUGIN/ERROR
+     * AVAILABLE -> INSTALLED_INACTIVE/ERROR
+     * INSTALLED_INACTIVE -> INSTALLED_ACTIVE/ERROR
+     * INSTALLED_ACTIVE -> INSTALLED_INACTIVE/ERROR
+     * NOT_PLUGIN -> CHECKING/AVAILABLE
+     * ERROR -> CHECKING/AVAILABLE/NOT_PLUGIN
+     */
+
+    /**
+     * Initialize allowed transitions.
+     */
+    private function init_transitions(): void {
+        $this->allowed_transitions = [
+            PluginState::UNKNOWN->value => [ PluginState::CHECKING->value, PluginState::AVAILABLE->value, PluginState::NOT_PLUGIN->value, PluginState::ERROR->value, PluginState::INSTALLED_INACTIVE->value, PluginState::INSTALLED_ACTIVE->value ],
+            PluginState::CHECKING->value => [ PluginState::AVAILABLE->value, PluginState::NOT_PLUGIN->value, PluginState::ERROR->value ],
+            PluginState::AVAILABLE->value => [ PluginState::INSTALLED_INACTIVE->value, PluginState::ERROR->value ],
+            PluginState::INSTALLED_INACTIVE->value => [ PluginState::INSTALLED_ACTIVE->value, PluginState::ERROR->value ],
+            PluginState::INSTALLED_ACTIVE->value => [ PluginState::INSTALLED_INACTIVE->value, PluginState::ERROR->value ],
+            PluginState::NOT_PLUGIN->value => [ PluginState::CHECKING->value, PluginState::AVAILABLE->value ],
+            PluginState::ERROR->value => [ PluginState::CHECKING->value, PluginState::AVAILABLE->value, PluginState::NOT_PLUGIN->value ],
+        ];
+    }
+
+    /**
+     * Transition to a new state with validation and event logging.
+     *
+     * @param string $repository owner/repo
+     * @param PluginState $to_state target state
+     * @param array $context optional context (e.g., source, message)
+     * @param bool $force when true, bypass transition validation (used by refresh_state)
+     */
+    public function transition( string $repository, PluginState $to_state, array $context = [], bool $force = false ): void {
+        $from_state = $this->states[$repository]->value ?? PluginState::UNKNOWN->value;
+        $to_value = $to_state->value;
+
+        // Initialize transition map on first use
+        if (empty($this->allowed_transitions)) {
+            $this->init_transitions();
+        }
+
+        if (! $force) {
+            $allowed = $this->allowed_transitions[$from_state] ?? [];
+            if (! in_array($to_value, $allowed, true)) {
+                // Log and ignore invalid transition to keep system robust
+                $this->log_event($repository, 'transition_blocked', [
+                    'from' => $from_state,
+                    'to' => $to_value,
+                    'reason' => 'invalid_transition',
+                    'context' => $context,
+                ]);
+                return;
+            }
+        }
+
+        $this->set_state($repository, $to_state);
+        $this->log_event($repository, 'transition', [
+            'from' => $from_state,
+            'to' => $to_value,
+            'context' => $context,
+        ]);
+    }
+
+    /**
+     * Append event to per-repo transient-backed ring buffer.
+     */
+    private function log_event(string $repository, string $event, array $data = []): void {
+        $key = 'sbi_state_events_' . md5($repository);
+        $events = get_transient($key);
+        if (!is_array($events)) { $events = []; }
+        $events[] = [
+            't' => time(),
+            'event' => $event,
+            'data' => $data,
+        ];
+        // Cap size
+        if (count($events) > self::EVENT_LOG_LIMIT) {
+            $events = array_slice($events, -self::EVENT_LOG_LIMIT);
+        }
+        set_transient($key, $events, self::EVENT_LOG_TTL);
+    }
+
+    /**
+     * Read recent events for a repo (for Self Tests/UI).
+     */
+    public function get_events(string $repository, int $limit = 10): array {
+        $key = 'sbi_state_events_' . md5($repository);
+        $events = get_transient($key);
+        if (!is_array($events)) { return []; }
+        return array_slice($events, -$limit);
+    }
 
     /**
      * PQS Integration service.
@@ -74,8 +182,10 @@ class StateManager {
      * @param string $repository Repository full name.
      */
     public function refresh_state( string $repository ): void {
+        // Move through CHECKING to determined state; bypass transition validation for refresh
+        $this->transition( $repository, PluginState::CHECKING, [ 'source' => 'refresh_state' ], true );
         $state = $this->determine_plugin_state( $repository );
-        $this->set_state( $repository, $state );
+        $this->transition( $repository, $state, [ 'source' => 'refresh_state' ], true );
     }
 
     /**
