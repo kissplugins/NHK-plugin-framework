@@ -1,5 +1,19 @@
 # REVISED CHECKLIST
 
+
+## REVISED CHECKLIST: Phase 1 – Lightweight State Machine (defer Event Sourcing)
+
+- [x] Decision: prioritize a lightweight validated state machine inside StateManager; defer Event Sourcing
+- [/] Draft plan: transition map, validated transition() API, small per‑repo event log (transient), minimal wiring at install/activate/deactivate/refresh, Self Tests for transitions
+- [ ] Implement transition() in StateManager with allowed transition map and guards
+- [ ] Centralize state changes to use transition() (replace ad‑hoc setters/derivations at key integration points)
+- [ ] Add compact transition event log (per repository, capped, transient‑backed) and expose a read method for Self Tests/UI
+- [ ] Wire transitions in PluginInstallationService (success/error) and AjaxHandler refresh paths
+- [ ] Add Self Tests for allowed/blocked transitions and event log shape
+- [ ] Document states/flows in inline comments and Self Tests
+
+Note: Event Sourcing, snapshots, and replay remain future considerations pending need.
+
 [ ]Define the transition table (allowed from → to) for PluginState
 
 [ ]Add StateManager methods that:
