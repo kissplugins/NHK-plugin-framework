@@ -309,9 +309,17 @@ class EventListShortcode extends Abstract_Shortcode {
         // Enqueue JavaScript if filters are enabled
         if (isset($_GET['show_filters']) || $this->has_filters_in_content()) {
             wp_enqueue_script(
+                'nhk-ajax-handler',
+                NHK_EVENT_MANAGER_URL . 'assets/js/nhk-ajax-handler.js',
+                [],
+                NHK_EVENT_MANAGER_VERSION,
+                true
+            );
+
+            wp_enqueue_script(
                 'nhk-event-filter',
                 NHK_EVENT_MANAGER_URL . 'assets/js/event-filter.js',
-                ['jquery'],
+                ['jquery', 'nhk-ajax-handler'],
                 NHK_EVENT_MANAGER_VERSION,
                 true
             );

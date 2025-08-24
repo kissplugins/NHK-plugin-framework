@@ -59,6 +59,46 @@ class SettingsPage extends Abstract_Settings_Page {
             'health' => __('Health Check', 'nhk-event-manager'),
         ];
     }
+
+    /**
+     * Enqueue admin scripts and styles.
+     *
+     * @param string $hook Current admin page hook.
+     * @return void
+     */
+    public function enqueue_scripts(string $hook): void {
+        if ($hook !== $this->page_hook) {
+            return;
+        }
+
+        wp_enqueue_style('wp-color-picker');
+        wp_enqueue_script('wp-color-picker');
+
+        wp_enqueue_script(
+            'nhk-ajax-handler',
+            NHK_EVENT_MANAGER_URL . 'assets/js/nhk-ajax-handler.js',
+            [],
+            NHK_EVENT_MANAGER_VERSION,
+            true
+        );
+
+        wp_enqueue_script(
+            'nhk-admin-settings',
+            $this->get_admin_js_url(),
+            ['jquery', 'wp-color-picker', 'nhk-ajax-handler'],
+            NHK_EVENT_MANAGER_VERSION,
+            true
+        );
+    }
+
+    /**
+     * Get admin JavaScript URL.
+     *
+     * @return string
+     */
+    protected function get_admin_js_url(): string {
+        return NHK_EVENT_MANAGER_URL . 'assets/js/admin.js';
+    }
     
     /**
      * Register setting sections
@@ -564,29 +604,28 @@ class SettingsPage extends Abstract_Settings_Page {
 
                 button.prop('disabled', true).text('<?php echo esc_js(__('Purging...', 'nhk-event-manager')); ?>');
 
-                $.ajax({
-                    url: ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'nhk_purge_event_cache',
-                        nonce: '<?php echo wp_create_nonce('nhk_purge_cache'); ?>'
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            result.html('<span style="color: green;"><?php echo esc_js(__('Cache purged successfully!', 'nhk-event-manager')); ?></span>');
-                        } else {
-                            result.html('<span style="color: red;"><?php echo esc_js(__('Failed to purge cache.', 'nhk-event-manager')); ?></span>');
-                        }
-                    },
-                    error: function() {
-                        result.html('<span style="color: red;"><?php echo esc_js(__('Error purging cache.', 'nhk-event-manager')); ?></span>');
-                    },
-                    complete: function() {
-                        button.prop('disabled', false).text('<?php echo esc_js(__('Purge Event Cache', 'nhk-event-manager')); ?>');
-                        setTimeout(function() {
-                            result.html('');
-                        }, 3000);
+                var params = new URLSearchParams({
+                    action: 'nhk_purge_event_cache',
+                    nonce: '<?php echo wp_create_nonce('nhk_purge_cache'); ?>'
+                });
+
+                nhkAjaxHandler.makeRequest(ajaxurl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                    body: params.toString()
+                }).then(function(response) {
+                    if (response.success) {
+                        result.html('<span style="color: green;"><?php echo esc_js(__('Cache purged successfully!', 'nhk-event-manager')); ?></span>');
+                    } else {
+                        result.html('<span style="color: red;"><?php echo esc_js(__('Failed to purge cache.', 'nhk-event-manager')); ?></span>');
                     }
+                }).catch(function() {
+                    result.html('<span style="color: red;"><?php echo esc_js(__('Error purging cache.', 'nhk-event-manager')); ?></span>');
+                }).finally(function() {
+                    button.prop('disabled', false).text('<?php echo esc_js(__('Purge Event Cache', 'nhk-event-manager')); ?>');
+                    setTimeout(function() {
+                        result.html('');
+                    }, 3000);
                 });
             });
         });
@@ -617,36 +656,36 @@ class SettingsPage extends Abstract_Settings_Page {
                 button.prop('disabled', true).text('<?php echo esc_js(__('Running Checks...', 'nhk-event-manager')); ?>');
                 results.html('<p><?php echo esc_js(__('Running health checks...', 'nhk-event-manager')); ?></p>');
 
-                $.ajax({
-                    url: ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'nhk_event_health_check',
-                        nonce: '<?php echo wp_create_nonce('nhk_event_health_check'); ?>'
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            var html = '<div class="health-check-results">';
-                            $.each(response.data, function(check, result) {
-                                var statusClass = result.status === 'healthy' ? 'success' :
-                                                result.status === 'warning' ? 'warning' : 'error';
-                                html += '<div class="notice notice-' + statusClass + ' inline">';
-                                html += '<p><strong>' + check.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) + ':</strong> ' + result.message + '</p>';
-                                html += '</div>';
-                            });
-                            html += '</div>';
-                            results.html(html);
-                        } else {
-                            results.html('<div class="notice notice-error inline"><p><?php echo esc_js(__('Failed to run health checks.', 'nhk-event-manager')); ?></p></div>');
-                        }
-                    },
-                    error: function() {
-                        results.html('<div class="notice notice-error inline"><p><?php echo esc_js(__('Error running health checks.', 'nhk-event-manager')); ?></p></div>');
-                    },
-                    complete: function() {
-                        button.prop('disabled', false).text('<?php echo esc_js(__('Run Health Checks', 'nhk-event-manager')); ?>');
-                    }
+                var params = new URLSearchParams({
+                    action: 'nhk_event_health_check',
+                    nonce: '<?php echo wp_create_nonce('nhk_event_health_check'); ?>'
                 });
+
+                nhkAjaxHandler.makeRequest(ajaxurl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                    body: params.toString()
+                }).then(function(response) {
+                    if (response.success) {
+                        var html = '<div class="health-check-results">';
+                        $.each(response.data, function(check, result) {
+                            var statusClass = result.status === 'healthy' ? 'success' :
+                                            result.status === 'warning' ? 'warning' : 'error';
+                            html += '<div class="notice notice-' + statusClass + ' inline">';
+                            html += '<p><strong>' + check.replace(/_/g, ' ') + ':</strong> ' + result.message + '</p>';
+                            html += '</div>';
+                        });
+                        html += '</div>';
+                        results.html(html);
+                    } else {
+                        results.html('<div class="notice notice-error inline"><p><?php echo esc_js(__('Failed to run health checks.', 'nhk-event-manager')); ?></p></div>');
+                    }
+                }).catch(function() {
+                    results.html('<div class="notice notice-error inline"><p><?php echo esc_js(__('Error running health checks.', 'nhk-event-manager')); ?></p></div>');
+                }).finally(function() {
+                    button.prop('disabled', false).text('<?php echo esc_js(__('Run Health Checks', 'nhk-event-manager')); ?>');
+                });
+
             });
         });
         </script>
