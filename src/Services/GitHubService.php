@@ -211,7 +211,7 @@ class GitHubService {
             error_log( 'KISS Smart Batch Installer: Fetching from URL: ' . $url );
         }
 
-        $response = wp_remote_get( $url, $args );
+        $response = $this->fetch_with_retry( $url, $args );
 
         if ( is_wp_error( $response ) ) {
             if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
@@ -238,7 +238,7 @@ class GitHubService {
             $org_base_url = sprintf( '%s/orgs/%s/repos', self::API_BASE, urlencode( $account_name ) );
             $org_url = add_query_arg( $query_params, $org_base_url );
 
-            $response = wp_remote_get( $org_url, $args );
+            $response = $this->fetch_with_retry( $org_url, $args );
 
             if ( is_wp_error( $response ) ) {
                 return new WP_Error(
@@ -921,5 +921,42 @@ class GitHubService {
         }
 
         return $repositories;
+    }
+
+    /**
+     * Fetch with retry logic for better error recovery.
+     *
+     * @param string $url URL to fetch.
+     * @param array  $args Request arguments.
+     * @param int    $max_retries Maximum number of retries.
+     * @return array|WP_Error Response or WP_Error on failure.
+     */
+    private function fetch_with_retry( $url, $args, $max_retries = 2 ) {
+        $attempts = 0;
+        $last_error = null;
+
+        while ( $attempts < $max_retries ) {
+            $response = wp_remote_get( $url, $args );
+
+            if ( ! is_wp_error( $response ) ) {
+                $code = wp_remote_retrieve_response_code( $response );
+                if ( $code === 200 ) {
+                    return $response;
+                }
+                // If rate limited, don't retry
+                if ( $code === 403 || $code === 429 ) {
+                    return $response;
+                }
+            }
+
+            $last_error = $response;
+            $attempts++;
+
+            if ( $attempts < $max_retries ) {
+                sleep( 1 );  // Wait 1 second before retry
+            }
+        }
+
+        return $last_error;
     }
 }

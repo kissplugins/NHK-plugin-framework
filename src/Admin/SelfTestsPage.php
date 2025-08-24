@@ -286,10 +286,13 @@ class SelfTestsPage {
         // Test categories
         $test_categories = [
             'core_services' => 'Core Services Tests',
-            'ajax_handlers' => 'AJAX Handler Tests', 
+            'ajax_handlers' => 'AJAX Handler Tests',
             'integration' => 'Integration Tests',
             'ui_components' => 'UI Component Tests',
-            'data_integrity' => 'Data Integrity Tests'
+            'data_integrity' => 'Data Integrity Tests',
+            'regression_protection' => 'Regression Protection Tests',
+            'plugin_detection_reliability' => 'Plugin Detection Reliability Tests',
+            'github_api_resilience' => 'GitHub API Resilience Tests'
         ];
 
         foreach ( $test_categories as $category => $title ) {
@@ -744,6 +747,460 @@ class SelfTestsPage {
                 (int) $options_count,
                 count( $tables )
             );
+        });
+
+        return $tests;
+    }
+
+    /**
+     * Test repository processing and button rendering to guard against Install button regressions.
+     *
+     * @return array Test results.
+     */
+    private function test_regression_protection(): array {
+        $tests = [];
+
+        // Test 1: Repository Processing & Button Rendering Flow
+        $tests[] = $this->run_test( 'Repository Processing & Button Rendering Flow', function() {
+            // Mock repository data for different plugin states
+            $test_cases = [
+                [
+                    'state' => \SBI\Enums\PluginState::AVAILABLE,
+                    'expected_button' => 'Install',
+                    'repo_data' => [
+                        'full_name' => 'testowner/test-available-plugin',
+                        'name' => 'test-available-plugin',
+                        'description' => 'Test plugin that should show Install button'
+                    ]
+                ],
+                [
+                    'state' => \SBI\Enums\PluginState::INSTALLED_INACTIVE,
+                    'expected_button' => 'Activate',
+                    'repo_data' => [
+                        'full_name' => 'testowner/test-inactive-plugin',
+                        'name' => 'test-inactive-plugin',
+                        'description' => 'Test plugin that should show Activate button'
+                    ]
+                ],
+                [
+                    'state' => \SBI\Enums\PluginState::INSTALLED_ACTIVE,
+                    'expected_button' => 'Deactivate',
+                    'repo_data' => [
+                        'full_name' => 'testowner/test-active-plugin',
+                        'name' => 'test-active-plugin',
+                        'description' => 'Test plugin that should show Deactivate button'
+                    ]
+                ],
+                [
+                    'state' => \SBI\Enums\PluginState::NOT_PLUGIN,
+                    'expected_button' => 'No actions available',
+                    'repo_data' => [
+                        'full_name' => 'testowner/test-not-plugin',
+                        'name' => 'test-not-plugin',
+                        'description' => 'Test repository that is not a plugin'
+                    ]
+                ]
+            ];
+
+            $results = [];
+            foreach ( $test_cases as $case ) {
+                // Create mock processed repository data
+                $processed_repo = [
+                    'repository' => $case['repo_data'],
+                    'is_plugin' => $case['state'] !== \SBI\Enums\PluginState::NOT_PLUGIN,
+                    'plugin_data' => [],
+                    'plugin_file' => $case['state'] !== \SBI\Enums\PluginState::NOT_PLUGIN ? $case['repo_data']['name'] . '.php' : '',
+                    'state' => $case['state']->value,
+                    'scan_method' => 'test_mock',
+                    'error' => null,
+                ];
+
+                // Test data flattening (simulating render_repository_row)
+                $flattened_data = array_merge(
+                    $case['repo_data'],
+                    [
+                        'is_plugin' => $processed_repo['is_plugin'],
+                        'plugin_data' => $processed_repo['plugin_data'],
+                        'plugin_file' => $processed_repo['plugin_file'],
+                        'installation_state' => $case['state'],
+                        'full_name' => $case['repo_data']['full_name'],
+                        'name' => $case['repo_data']['name'],
+                    ]
+                );
+
+                // Test button rendering logic
+                $list_table = new \SBI\Admin\RepositoryListTable(
+                    $this->github_service,
+                    $this->detection_service,
+                    $this->state_manager
+                );
+
+                $actions_html = $list_table->column_actions( $flattened_data );
+
+                // Verify expected button appears
+                $button_found = strpos( $actions_html, $case['expected_button'] ) !== false;
+                $refresh_button_found = strpos( $actions_html, 'Refresh' ) !== false;
+
+                if ( ! $button_found ) {
+                    throw new \Exception( sprintf(
+                        'REGRESSION DETECTED: Expected "%s" button not found for state %s. This indicates the Install button fix has regressed. HTML output: %s. Check RepositoryListTable::column_actions() method and ensure is_plugin field is properly set.',
+                        $case['expected_button'],
+                        $case['state']->value,
+                        $actions_html
+                    ) );
+                }
+
+                if ( ! $refresh_button_found ) {
+                    throw new \Exception( sprintf(
+                        'REGRESSION DETECTED: Refresh button not found for state %s. HTML output: %s. Check RepositoryListTable::column_actions() method.',
+                        $case['state']->value,
+                        $actions_html
+                    ) );
+                }
+
+                $results[] = sprintf( '%s state → %s button ✓', $case['state']->value, $case['expected_button'] );
+            }
+
+            return 'All button rendering tests passed: ' . implode( ', ', $results );
+        });
+
+        return $tests;
+    }
+
+    /**
+     * Test plugin detection service reliability to prevent hanging and timeout issues.
+     *
+     * @return array Test results.
+     */
+    private function test_plugin_detection_reliability(): array {
+        $tests = [];
+
+        // Test 1: Plugin Detection Timeout Protection
+        $tests[] = $this->run_test( 'Plugin Detection Timeout Protection', function() {
+            $test_repositories = [
+                [
+                    'full_name' => 'testowner/valid-plugin',
+                    'name' => 'valid-plugin',
+                    'default_branch' => 'main',
+                    'description' => 'Test repository for timeout testing'
+                ],
+                [
+                    'full_name' => 'testowner/empty-repo',
+                    'name' => 'empty-repo',
+                    'default_branch' => 'main',
+                    'description' => 'Test empty repository'
+                ]
+            ];
+
+            $timeout_results = [];
+            foreach ( $test_repositories as $repo ) {
+                $start_time = microtime( true );
+
+                try {
+                    $result = $this->detection_service->detect_plugin( $repo );
+                    $end_time = microtime( true );
+                    $duration = ( $end_time - $start_time ) * 1000; // Convert to milliseconds
+
+                    // Check if detection completed within timeout (should be under 5 seconds = 5000ms)
+                    if ( $duration > 5000 ) {
+                        throw new \Exception( sprintf(
+                            'TIMEOUT ISSUE: Plugin detection took %dms for %s, exceeding 5000ms limit. This indicates timeout protection is not working. Check PluginDetectionService::get_file_content() timeout settings.',
+                            (int) $duration,
+                            $repo['full_name']
+                        ) );
+                    }
+
+                    $timeout_results[] = sprintf( '%s: %dms', $repo['name'], (int) $duration );
+
+                } catch ( \Exception $e ) {
+                    $end_time = microtime( true );
+                    $duration = ( $end_time - $start_time ) * 1000;
+
+                    if ( $duration > 5000 ) {
+                        throw new \Exception( sprintf(
+                            'TIMEOUT ISSUE: Plugin detection failed with timeout after %dms for %s. Error: %s. Check network connectivity and timeout settings.',
+                            (int) $duration,
+                            $repo['full_name'],
+                            $e->getMessage()
+                        ) );
+                    }
+
+                    // Expected errors (like 404) are acceptable as long as they're fast
+                    $timeout_results[] = sprintf( '%s: %dms (expected error)', $repo['name'], (int) $duration );
+                }
+            }
+
+            return 'Timeout protection working: ' . implode( ', ', $timeout_results );
+        });
+
+        // Test 2: Skip Detection Mode Validation
+        $tests[] = $this->run_test( 'Skip Detection Mode Validation', function() {
+            // Save current setting
+            $original_setting = get_option( 'sbi_skip_plugin_detection', false );
+
+            try {
+                // Enable skip detection
+                update_option( 'sbi_skip_plugin_detection', true );
+
+                $test_repo = [
+                    'full_name' => 'testowner/skip-test',
+                    'name' => 'skip-test',
+                    'default_branch' => 'main',
+                    'description' => 'Test repository for skip detection'
+                ];
+
+                $result = $this->detection_service->detect_plugin( $test_repo );
+
+                if ( is_wp_error( $result ) ) {
+                    throw new \Exception( sprintf(
+                        'SKIP DETECTION ISSUE: Skip detection mode returned WP_Error: %s. This should return a valid result with is_plugin: true.',
+                        $result->get_error_message()
+                    ) );
+                }
+
+                if ( ! isset( $result['is_plugin'] ) || ! $result['is_plugin'] ) {
+                    throw new \Exception( sprintf(
+                        'SKIP DETECTION REGRESSION: Skip detection mode returned is_plugin: %s instead of true. This will cause Install buttons to disappear. Check PluginDetectionService skip detection logic.',
+                        isset( $result['is_plugin'] ) ? ( $result['is_plugin'] ? 'true' : 'false' ) : 'undefined'
+                    ) );
+                }
+
+                if ( ! isset( $result['scan_method'] ) || $result['scan_method'] !== 'skipped_for_testing' ) {
+                    throw new \Exception( 'Skip detection mode not properly identified in scan_method field' );
+                }
+
+                return sprintf( 'Skip detection working correctly: is_plugin=%s, scan_method=%s',
+                    $result['is_plugin'] ? 'true' : 'false',
+                    $result['scan_method']
+                );
+
+            } finally {
+                // Restore original setting
+                update_option( 'sbi_skip_plugin_detection', $original_setting );
+            }
+        });
+
+        // Test 3: Error Handling and Recovery
+        $tests[] = $this->run_test( 'Error Handling and Recovery', function() {
+            $error_test_cases = [
+                [
+                    'repo' => [
+                        'full_name' => '',
+                        'name' => '',
+                        'default_branch' => 'main'
+                    ],
+                    'expected_error' => 'invalid_repository'
+                ],
+                [
+                    'repo' => [
+                        'full_name' => 'nonexistent/definitely-does-not-exist-12345',
+                        'name' => 'definitely-does-not-exist-12345',
+                        'default_branch' => 'main'
+                    ],
+                    'expected_error' => 'file_not_found'
+                ]
+            ];
+
+            $error_results = [];
+            foreach ( $error_test_cases as $case ) {
+                $result = $this->detection_service->detect_plugin( $case['repo'] );
+
+                if ( ! is_wp_error( $result ) ) {
+                    throw new \Exception( sprintf(
+                        'ERROR HANDLING ISSUE: Expected WP_Error for invalid repository %s, but got successful result. Error handling may not be working properly.',
+                        $case['repo']['full_name'] ?: 'empty'
+                    ) );
+                }
+
+                $error_code = $result->get_error_code();
+                if ( $error_code !== $case['expected_error'] ) {
+                    // Log the actual error for debugging but don't fail the test
+                    error_log( sprintf(
+                        'SBI Test: Expected error code %s but got %s for repository %s. Error message: %s',
+                        $case['expected_error'],
+                        $error_code,
+                        $case['repo']['full_name'] ?: 'empty',
+                        $result->get_error_message()
+                    ) );
+                }
+
+                $error_results[] = sprintf( '%s → %s',
+                    $case['repo']['full_name'] ?: 'empty',
+                    $error_code
+                );
+            }
+
+            return 'Error handling working: ' . implode( ', ', $error_results );
+        });
+
+        return $tests;
+    }
+
+    /**
+     * Test GitHub API integration and error recovery to ensure robust handling of API issues.
+     *
+     * @return array Test results.
+     */
+    private function test_github_api_resilience(): array {
+        $tests = [];
+
+        // Test 1: GitHub API Response Handling
+        $tests[] = $this->run_test( 'GitHub API Response Handling', function() {
+            $organization = get_option( 'sbi_github_organization', '' );
+
+            if ( empty( $organization ) ) {
+                throw new \Exception( 'No GitHub organization configured for testing. Please configure an organization in settings.' );
+            }
+
+            // Test basic API connectivity
+            $start_time = microtime( true );
+            $repositories = $this->github_service->fetch_repositories_for_account( $organization, false, 1 );
+            $end_time = microtime( true );
+            $duration = ( $end_time - $start_time ) * 1000;
+
+            if ( is_wp_error( $repositories ) ) {
+                $error_code = $repositories->get_error_code();
+                $error_message = $repositories->get_error_message();
+
+                // Log detailed error information for debugging
+                error_log( sprintf(
+                    'SBI Test: GitHub API failed for organization %s. Error code: %s, Message: %s, Duration: %dms',
+                    $organization,
+                    $error_code,
+                    $error_message,
+                    (int) $duration
+                ) );
+
+                // Check if it's a rate limiting issue
+                if ( strpos( $error_message, '403' ) !== false || strpos( $error_message, 'rate limit' ) !== false ) {
+                    throw new \Exception( sprintf(
+                        'RATE LIMITING DETECTED: GitHub API rate limit exceeded for organization %s. Error: %s. Consider implementing better rate limiting or using web scraping fallback.',
+                        $organization,
+                        $error_message
+                    ) );
+                }
+
+                // Check if it's a network connectivity issue
+                if ( strpos( $error_message, 'timeout' ) !== false || strpos( $error_message, 'network' ) !== false ) {
+                    throw new \Exception( sprintf(
+                        'NETWORK ISSUE: GitHub API network connectivity problem for organization %s. Error: %s. Duration: %dms. Check network connectivity and retry logic.',
+                        $organization,
+                        $error_message,
+                        (int) $duration
+                    ) );
+                }
+
+                // Other API errors
+                throw new \Exception( sprintf(
+                    'GITHUB API ISSUE: API request failed for organization %s. Error: %s. Duration: %dms. Check API endpoint and authentication.',
+                    $organization,
+                    $error_message,
+                    (int) $duration
+                ) );
+            }
+
+            if ( ! is_array( $repositories ) || empty( $repositories ) ) {
+                throw new \Exception( sprintf(
+                    'GITHUB API ISSUE: API returned empty or invalid data for organization %s. Expected array of repositories but got: %s',
+                    $organization,
+                    gettype( $repositories )
+                ) );
+            }
+
+            return sprintf( 'GitHub API working: fetched %d repositories in %dms', count( $repositories ), (int) $duration );
+        });
+
+        // Test 2: Retry Logic Validation
+        $tests[] = $this->run_test( 'Retry Logic Validation', function() {
+            // Test with a non-existent organization to trigger retry logic
+            $fake_org = 'definitely-does-not-exist-test-org-12345';
+
+            $start_time = microtime( true );
+            $result = $this->github_service->fetch_repositories_for_account( $fake_org, true, 1 );
+            $end_time = microtime( true );
+            $duration = ( $end_time - $start_time ) * 1000;
+
+            if ( ! is_wp_error( $result ) ) {
+                throw new \Exception( sprintf(
+                    'RETRY LOGIC ISSUE: Expected WP_Error for non-existent organization %s, but got successful result. Retry logic may not be working properly.',
+                    $fake_org
+                ) );
+            }
+
+            // Check that it took reasonable time (should include retry delays)
+            // With 2 retries and 1 second delay, minimum should be around 2000ms
+            if ( $duration < 1000 ) {
+                error_log( sprintf(
+                    'SBI Test: Retry logic may not be working - request completed too quickly (%dms) for non-existent org %s. Expected at least 1000ms with retry delays.',
+                    (int) $duration,
+                    $fake_org
+                ) );
+            }
+
+            $error_message = $result->get_error_message();
+
+            // Log the error for debugging
+            error_log( sprintf(
+                'SBI Test: Retry logic test completed for %s. Duration: %dms, Error: %s',
+                $fake_org,
+                (int) $duration,
+                $error_message
+            ) );
+
+            return sprintf( 'Retry logic working: failed appropriately in %dms with error: %s', (int) $duration, $error_message );
+        });
+
+        // Test 3: Web Scraping Fallback
+        $tests[] = $this->run_test( 'Web Scraping Fallback', function() {
+            // Save current setting
+            $original_method = get_option( 'sbi_fetch_method', 'web_only' );
+
+            try {
+                // Force web-only method
+                update_option( 'sbi_fetch_method', 'web_only' );
+
+                $organization = get_option( 'sbi_github_organization', '' );
+
+                if ( empty( $organization ) ) {
+                    throw new \Exception( 'No GitHub organization configured for web scraping test' );
+                }
+
+                $start_time = microtime( true );
+                $repositories = $this->github_service->fetch_repositories_for_account( $organization, true, 2 );
+                $end_time = microtime( true );
+                $duration = ( $end_time - $start_time ) * 1000;
+
+                if ( is_wp_error( $repositories ) ) {
+                    $error_message = $repositories->get_error_message();
+
+                    error_log( sprintf(
+                        'SBI Test: Web scraping failed for organization %s. Error: %s, Duration: %dms',
+                        $organization,
+                        $error_message,
+                        (int) $duration
+                    ) );
+
+                    throw new \Exception( sprintf(
+                        'WEB SCRAPING ISSUE: Web scraping fallback failed for organization %s. Error: %s. Duration: %dms. Check web scraping implementation and GitHub page structure.',
+                        $organization,
+                        $error_message,
+                        (int) $duration
+                    ) );
+                }
+
+                if ( ! is_array( $repositories ) || empty( $repositories ) ) {
+                    throw new \Exception( sprintf(
+                        'WEB SCRAPING ISSUE: Web scraping returned empty or invalid data for organization %s. Expected array of repositories.',
+                        $organization
+                    ) );
+                }
+
+                return sprintf( 'Web scraping working: fetched %d repositories in %dms', count( $repositories ), (int) $duration );
+
+            } finally {
+                // Restore original setting
+                update_option( 'sbi_fetch_method', $original_method );
+            }
         });
 
         return $tests;

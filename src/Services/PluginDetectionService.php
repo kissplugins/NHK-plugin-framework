@@ -452,12 +452,16 @@ class PluginDetectionService {
         }
 
         $args = [
-            'timeout' => 8, // Reduced timeout to prevent hanging
+            'timeout' => 5,  // Reduced from 8 seconds
+            'blocking' => true,
+            'stream' => false,
+            'filename' => null,
+            'limit_response_size' => 8192,  // Only need first 8KB for headers
             'headers' => [
                 'User-Agent' => self::USER_AGENT,
             ],
         ];
-        
+
         $response = wp_remote_get( $url, $args );
 
         if ( is_wp_error( $response ) ) {

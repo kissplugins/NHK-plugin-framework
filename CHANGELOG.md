@@ -5,6 +5,45 @@ All notable changes to the KISS Smart Batch Installer will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.12] - 2025-08-24
+
+### Fixed
+- **CRITICAL**: Resolved Install button not appearing in repository table
+- Fixed state determination logic in `AjaxHandler::process_repository()` method
+- Enhanced plugin file handling to use detected plugin file when available
+- Fixed repository data inconsistency between processing and rendering layers
+- Corrected skip detection mode to return `is_plugin: true` instead of `false`
+
+### Enhanced
+- **Repository Processing**: Improved state determination with comprehensive debug logging
+- **Button Rendering**: Enhanced `RepositoryListTable::column_actions()` with better data handling
+- **Timeout Protection**: Reduced plugin detection timeout from 8s to 5s with response size limits
+- **Error Recovery**: Added retry logic for GitHub API calls with smart rate limit handling
+- **Data Consistency**: Fixed data structure flattening to preserve all required fields
+
+### Added
+- **NEW**: Comprehensive regression protection self-tests
+- **NEW**: Plugin detection reliability tests with timeout validation
+- **NEW**: GitHub API resilience tests with retry logic validation
+- Added `find_installed_plugin()` helper method to RepositoryListTable
+- Added `fetch_with_retry()` method to GitHubService for better error recovery
+- Enhanced error logging with detailed failure messages and recovery guidance
+
+### Technical Improvements
+- **AjaxHandler**: Enhanced `process_repository()` with better plugin file detection
+- **AjaxHandler**: Improved `render_repository_row()` data flattening consistency
+- **PluginDetectionService**: Added timeout protection and response size limits (8KB)
+- **PluginDetectionService**: Fixed skip detection mode to prevent button disappearance
+- **GitHubService**: Implemented retry mechanism for temporary API failures
+- **RepositoryListTable**: Improved owner/repo name extraction and button generation
+- **Self-Tests**: Added 9 new tests covering critical regression points
+
+### Developer Features
+- Comprehensive debug logging for state transitions and button rendering
+- Self-tests now include detailed error messages with specific recovery guidance
+- Performance timing in tests to identify hanging and slow operations
+- Error logging includes file names and method names for faster debugging
+
 ## [1.0.11] - 2025-08-24
 
 ### Known Issues

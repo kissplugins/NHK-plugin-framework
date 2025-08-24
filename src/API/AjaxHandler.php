@@ -315,12 +315,17 @@ class AjaxHandler {
         try {
             // Flatten the data structure to match what RepositoryListTable expects
             $repo_data = $repository_data['repository'] ?? [];
-            $flattened_data = array_merge( $repo_data, [
-                'is_plugin' => $repository_data['is_plugin'] ?? false,
-                'plugin_data' => $repository_data['plugin_data'] ?? [],
-                'plugin_file' => $repository_data['plugin_file'] ?? '',
-                'installation_state' => \SBI\Enums\PluginState::from( $repository_data['state'] ?? 'unknown' ),
-            ] );
+            $flattened_data = array_merge(
+                $repo_data,
+                [
+                    'is_plugin' => $repository_data['is_plugin'] ?? false,
+                    'plugin_data' => $repository_data['plugin_data'] ?? [],
+                    'plugin_file' => $repository_data['plugin_file'] ?? '',
+                    'installation_state' => \SBI\Enums\PluginState::from( $repository_data['state'] ?? 'unknown' ),
+                    'full_name' => $repo_data['full_name'] ?? '',  // Ensure full_name is preserved
+                    'name' => $repo_data['name'] ?? '',  // Ensure name is preserved
+                ]
+            );
 
             error_log( sprintf( 'SBI AJAX: Flattened data for %s: %s', $repo_name, json_encode( array_keys( $flattened_data ) ) ) );
 
