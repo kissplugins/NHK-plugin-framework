@@ -212,6 +212,223 @@ If GitHub changes their HTML structure:
 - No authentication or private data access
 - Respects robots.txt guidelines
 
+## Recent Challenges & Lessons Learned (v1.0.11-1.0.12)
+
+### Critical Regression: Install Button Disappearance
+
+**Problem**: After implementing web scraping, Install buttons stopped appearing in the repository table despite successful data fetching.
+
+**Root Causes Identified**:
+1. **State Management Inconsistency**: Plugin detection was returning `is_plugin: false` when skip detection was enabled
+2. **Data Structure Flattening Issues**: Repository data was losing required fields during processing
+3. **Button Rendering Logic**: Early return in `column_actions()` when `is_plugin` was false
+
+**Impact**: Complete breakdown of core functionality - users couldn't install any plugins
+
+### Recovery Strategy Implemented
+
+#### 1. **Enhanced Debug Logging**
+```php
+// Added comprehensive logging throughout the pipeline
+error_log( sprintf( 'SBI: Repository %s - is_plugin: %s, state: %s',
+    $repo_name,
+    $is_plugin ? 'true' : 'false',
+    $state->value
+) );
+```
+
+#### 2. **Data Consistency Validation**
+```php
+// Improved data flattening in render_repository_row()
+$flattened_data = array_merge(
+    $repo_data,
+    [
+        'is_plugin' => $repository_data['is_plugin'] ?? false,
+        'plugin_data' => $repository_data['plugin_data'] ?? [],
+        'plugin_file' => $repository_data['plugin_file'] ?? '',
+        'installation_state' => \SBI\Enums\PluginState::from( $repository_data['state'] ?? 'unknown' ),
+        'full_name' => $repo_data['full_name'] ?? '',  // Ensure preservation
+        'name' => $repo_data['name'] ?? '',  // Ensure preservation
+    ]
+);
+```
+
+#### 3. **Skip Detection Mode Fix**
+```php
+// Fixed skip detection to return appropriate state
+if ( $skip_detection ) {
+    return [
+        'is_plugin' => true,  // Changed from false to true
+        'plugin_file' => $repository['name'] . '.php',
+        'plugin_data' => [
+            'Plugin Name' => $repository['name'],
+            'Description' => $repository['description'] ?? '',
+        ],
+        'scan_method' => 'skipped_for_testing',
+        'error' => null,
+    ];
+}
+```
+
+### Regression Prevention Measures
+
+#### 1. **Comprehensive Self-Tests Added**
+- **Repository Processing & Button Rendering Tests**: Validates complete flow from data processing to UI rendering
+- **Plugin Detection Reliability Tests**: Ensures timeout protection and skip mode work correctly
+- **GitHub API Resilience Tests**: Validates retry logic and fallback mechanisms
+
+#### 2. **Enhanced Error Reporting**
+```php
+// Self-tests now include detailed recovery guidance
+if ( ! $button_found ) {
+    throw new \Exception( sprintf(
+        'REGRESSION DETECTED: Expected "%s" button not found for state %s. This indicates the Install button fix has regressed. HTML output: %s. Check RepositoryListTable::column_actions() method and ensure is_plugin field is properly set.',
+        $expected_button,
+        $state->value,
+        $actions_html
+    ) );
+}
+```
+
+#### 3. **Timeout Protection Improvements**
+```php
+// Reduced timeouts and added response size limits
+$args = [
+    'timeout' => 5,  // Reduced from 8 seconds
+    'blocking' => true,
+    'stream' => false,
+    'filename' => null,
+    'limit_response_size' => 8192,  // Only need first 8KB for headers
+    'headers' => [
+        'User-Agent' => self::USER_AGENT,
+    ],
+];
+```
+
+#### 4. **Retry Logic for API Calls**
+```php
+// Added intelligent retry mechanism
+private function fetch_with_retry( $url, $args, $max_retries = 2 ) {
+    $attempts = 0;
+    $last_error = null;
+
+    while ( $attempts < $max_retries ) {
+        $response = wp_remote_get( $url, $args );
+
+        if ( ! is_wp_error( $response ) ) {
+            $code = wp_remote_retrieve_response_code( $response );
+            if ( $code === 200 ) return $response;
+            // Don't retry rate limits
+            if ( $code === 403 || $code === 429 ) return $response;
+        }
+
+        $last_error = $response;
+        $attempts++;
+
+        if ( $attempts < $max_retries ) {
+            sleep( 1 );  // Wait before retry
+        }
+    }
+
+    return $last_error;
+}
+```
+
+## Recovery Playbook for Future Regressions
+
+### 🚨 **Emergency Response Checklist**
+
+#### **Step 1: Immediate Assessment (5 minutes)**
+- [ ] Check if Install buttons are visible in repository table
+- [ ] Verify repository data is being fetched (check debug logs)
+- [ ] Test with "Skip Plugin Detection" both enabled and disabled
+- [ ] Check browser console for JavaScript errors
+
+#### **Step 2: Quick Diagnosis (10 minutes)**
+- [ ] Run Self-Tests from admin page (`/wp-admin/admin.php?page=sbi-self-tests`)
+- [ ] Check "Regression Protection Tests" results
+- [ ] Review error logs for state management issues
+- [ ] Verify `is_plugin` field values in debug output
+
+#### **Step 3: Common Fix Patterns (15 minutes)**
+
+**If buttons missing but data loads:**
+```php
+// Check RepositoryListTable::column_actions() method
+// Verify early return condition:
+if ( ! $item['is_plugin'] ) {
+    return '<span style="color: #999;">No actions available</span>';
+}
+```
+
+**If plugin detection failing:**
+```php
+// Check PluginDetectionService skip detection mode
+// Ensure it returns is_plugin: true when skipping
+```
+
+**If data structure inconsistent:**
+```php
+// Check AjaxHandler::render_repository_row() flattening
+// Ensure all required fields are preserved
+```
+
+#### **Step 4: Systematic Recovery (30 minutes)**
+- [ ] Enable comprehensive debug logging
+- [ ] Test with single repository using repository test tool
+- [ ] Verify state transitions: UNKNOWN → CHECKING → AVAILABLE
+- [ ] Check data consistency at each processing stage
+- [ ] Validate button rendering logic with mock data
+
+### 🔧 **Debug Tools & Commands**
+
+#### **Enable Debug Mode**
+```php
+// Add to wp-config.php for detailed logging
+define('WP_DEBUG', true);
+define('WP_DEBUG_LOG', true);
+```
+
+#### **Test Single Repository**
+```php
+// Use repository test tool in admin interface
+// Test with known working repository: kissplugins/KISS-Smart-Batch-Installer
+```
+
+#### **Check State Management**
+```php
+// Verify state enum values
+$state = \SBI\Enums\PluginState::AVAILABLE;
+error_log("State value: " . $state->value); // Should be 'available'
+```
+
+#### **Validate Data Structure**
+```php
+// Check flattened data structure
+error_log("Flattened data keys: " . json_encode(array_keys($flattened_data)));
+// Should include: full_name, name, is_plugin, installation_state
+```
+
+### 📊 **Monitoring & Prevention**
+
+#### **Regular Health Checks**
+- [ ] Run self-tests weekly
+- [ ] Monitor error logs for state management issues
+- [ ] Test with different repository types (plugins vs non-plugins)
+- [ ] Verify timeout protection is working (operations complete < 5s)
+
+#### **Code Review Checklist**
+- [ ] Any changes to state management must include self-tests
+- [ ] Data structure changes require consistency validation
+- [ ] UI rendering changes need button visibility tests
+- [ ] Timeout modifications require performance validation
+
+#### **Release Validation**
+- [ ] All self-tests must pass before release
+- [ ] Manual testing with real repositories
+- [ ] Verify both API and web scraping methods work
+- [ ] Test skip detection mode functionality
+
 ## Future Improvements
 
 ### Potential Enhancements
@@ -221,3 +438,5 @@ If GitHub changes their HTML structure:
 3. **Caching Optimization**: Smarter cache invalidation
 4. **Parallel Processing**: Concurrent page fetching with rate limiting
 5. **Fallback Strategies**: Multiple data sources for reliability
+6. **Automated Regression Testing**: CI/CD integration with self-tests
+7. **Performance Monitoring**: Real-time performance metrics and alerting
