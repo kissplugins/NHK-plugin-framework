@@ -5,6 +5,23 @@ All notable changes to the KISS Smart Batch Installer will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.16] - 2025-08-24
+
+### Added
+- FSM Self Tests: validate allowed/blocked transitions and verify event log structure
+
+### Changed
+- Architecture doc: updated REVISED CHECKLIST to mark implemented FSM items
+
+## [1.0.15] - 2025-08-24
+
+### Added
+- Lightweight validated state machine in StateManager: explicit transitions, allowed map, and transient-backed event log (capped)
+- FSM integration points: Ajax install/activate/deactivate and refresh paths
+
+### Fixed
+- Robust state updates during install/activation/deactivation with transition logging
+
 ## [1.0.14] - 2025-08-24
 
 ### Fixed

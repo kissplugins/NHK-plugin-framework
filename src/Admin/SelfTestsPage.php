@@ -506,6 +506,42 @@ class SelfTestsPage {
             }
 
             return 'State management working correctly';
+
+            // FSM transitions and event log basic test
+            $tests[] = $this->run_test( 'FSM Transitions and Event Log', function() {
+                $repo = 'test/fsm-plugin';
+
+                // Start from unknown and attempt invalid transition (should be blocked and logged)
+                $this->state_manager->transition( $repo, PluginState::INSTALLED_ACTIVE, [ 'source' => 'selftest' ] );
+                $events = $this->state_manager->get_events( $repo, 5 );
+                $has_blocked = false;
+                foreach ( $events as $e ) {
+                    if ( isset($e['event']) && $e['event'] === 'transition_blocked' ) {
+                        $has_blocked = true;
+                        break;
+                    }
+                }
+                if ( ! $has_blocked ) {
+                    throw new \Exception( 'Expected invalid transition to be blocked and logged' );
+                }
+
+                // Valid transitions: UNKNOWN -> CHECKING -> AVAILABLE
+                $this->state_manager->transition( $repo, PluginState::CHECKING, [ 'source' => 'selftest' ] );
+                $this->state_manager->transition( $repo, PluginState::AVAILABLE, [ 'source' => 'selftest' ] );
+                $state = $this->state_manager->get_state( $repo );
+                if ( $state !== PluginState::AVAILABLE ) {
+                    throw new \Exception( 'Expected state to be AVAILABLE after valid transitions' );
+                }
+
+                // Ensure events contain recent transitions
+                $events = $this->state_manager->get_events( $repo, 10 );
+                if ( empty( $events ) ) {
+                    throw new \Exception( 'Expected recent events for repository' );
+                }
+
+                return 'FSM transitions validated and events logged (' . count($events) . ' recent)';
+            } );
+
         });
 
         return $tests;

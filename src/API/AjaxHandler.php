@@ -12,6 +12,7 @@ use SBI\Services\GitHubService;
 use SBI\Services\PluginDetectionService;
 use SBI\Services\PluginInstallationService;
 use SBI\Services\StateManager;
+use SBI\Enums\PluginState;
 
 /**
  * AJAX handler class.
@@ -367,7 +368,7 @@ class AjaxHandler {
             ] );
         }
         
-        // Refresh state
+        // Refresh state: use StateManager FSM
         $this->state_manager->refresh_state( $repo_name );
         $new_state = $this->state_manager->get_state( $repo_name );
         
@@ -414,6 +415,9 @@ class AjaxHandler {
             ];
 
             $this->send_progress_update( 'Security Verification', 'success', 'Security checks passed' );
+
+            // FSM: mark repository as checking prior to install attempt
+            $this->state_manager->transition( sprintf('%s/%s', $owner, $repo_name), PluginState::CHECKING, [ 'source' => 'ajax_install' ] );
 
             // Step 2: Parameter validation
             $debug_steps[] = [
@@ -521,6 +525,9 @@ class AjaxHandler {
                     'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
                 ];
 
+                // FSM: mark repository as error
+                $this->state_manager->transition( sprintf('%s/%s', $owner, $repo_name), PluginState::ERROR, [ 'source' => 'ajax_install', 'error_code' => $error_code ] );
+
                 $this->send_progress_update( 'Plugin Installation', 'error', 'Installation failed: ' . $enhanced_message );
 
                 error_log( sprintf( 'SBI INSTALL: Installation failed for %s/%s: %s (Code: %s)',
@@ -548,6 +555,10 @@ class AjaxHandler {
             ];
 
             $this->send_progress_update( 'Plugin Installation', 'success', "Successfully installed {$owner}/{$repo_name}" );
+
+            // FSM: set final installed state based on activation
+            $final_state = ( ! empty( $result['activated'] ) ) ? PluginState::INSTALLED_ACTIVE : PluginState::INSTALLED_INACTIVE;
+            $this->state_manager->transition( sprintf('%s/%s', $owner, $repo_name), $final_state, [ 'source' => 'ajax_install' ] );
 
             error_log( sprintf( 'SBI INSTALL: Installation successful for %s/%s', $owner, $repo_name ) );
 
@@ -625,10 +636,19 @@ class AjaxHandler {
         $result = $this->installation_service->activate_plugin( $plugin_file );
 
         if ( is_wp_error( $result ) ) {
+            // FSM: mark error state for this repo
+            if ( ! empty( $repo_name ) ) {
+                $this->state_manager->transition( $repo_name, PluginState::ERROR, [ 'source' => 'ajax_activate' ] );
+            }
             wp_send_json_error( [
                 'message' => $result->get_error_message(),
                 'repository' => $repo_name,
             ] );
+        }
+
+        // FSM: set repo active state
+        if ( ! empty( $repo_name ) ) {
+            $this->state_manager->transition( $repo_name, PluginState::INSTALLED_ACTIVE, [ 'source' => 'ajax_activate' ] );
         }
 
         wp_send_json_success( array_merge( $result, [
@@ -655,10 +675,19 @@ class AjaxHandler {
         $result = $this->installation_service->deactivate_plugin( $plugin_file );
 
         if ( is_wp_error( $result ) ) {
+            // FSM: mark error state for this repo
+            if ( ! empty( $repo_name ) ) {
+                $this->state_manager->transition( $repo_name, PluginState::ERROR, [ 'source' => 'ajax_deactivate' ] );
+            }
             wp_send_json_error( [
                 'message' => $result->get_error_message(),
                 'repository' => $repo_name,
             ] );
+        }
+
+        // FSM: set repo inactive state
+        if ( ! empty( $repo_name ) ) {
+            $this->state_manager->transition( $repo_name, PluginState::INSTALLED_INACTIVE, [ 'source' => 'ajax_deactivate' ] );
         }
 
         wp_send_json_success( array_merge( $result, [

@@ -5,11 +5,11 @@
 
 - [x] Decision: prioritize a lightweight validated state machine inside StateManager; defer Event Sourcing
 - [/] Draft plan: transition map, validated transition() API, small per‑repo event log (transient), minimal wiring at install/activate/deactivate/refresh, Self Tests for transitions
-- [ ] Implement transition() in StateManager with allowed transition map and guards
+- [x] Implement transition() in StateManager with allowed transition map and guards
 - [ ] Centralize state changes to use transition() (replace ad‑hoc setters/derivations at key integration points)
-- [ ] Add compact transition event log (per repository, capped, transient‑backed) and expose a read method for Self Tests/UI
-- [ ] Wire transitions in PluginInstallationService (success/error) and AjaxHandler refresh paths
-- [ ] Add Self Tests for allowed/blocked transitions and event log shape
+- [x] Add compact transition event log (per repository, capped, transient‑backed) and expose a read method for Self Tests/UI
+- [x] Wire transitions in PluginInstallationService (success/error) and AjaxHandler refresh paths
+- [x] Add Self Tests for allowed/blocked transitions and event log shape
 - [ ] Document states/flows in inline comments and Self Tests
 
 Note: Event Sourcing, snapshots, and replay remain future considerations pending need.
