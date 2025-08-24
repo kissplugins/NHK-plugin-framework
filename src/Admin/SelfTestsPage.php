@@ -1045,7 +1045,14 @@ class SelfTestsPage {
 
         // Test 3: Error Handling and Recovery
         $tests[] = $this->run_test( 'Error Handling and Recovery', function() {
-            $error_test_cases = [
+            // Force detection to run for this test, regardless of global setting
+            $original_setting = get_option( 'sbi_skip_plugin_detection', false );
+            update_option( 'sbi_skip_plugin_detection', false );
+            // Force detection to run for this test, regardless of global setting
+            $original_setting = get_option( 'sbi_skip_plugin_detection', false );
+            update_option( 'sbi_skip_plugin_detection', false );
+            try {
+                $error_test_cases = [
                 [
                     'repo' => [
                         'full_name' => '',
@@ -1094,6 +1101,10 @@ class SelfTestsPage {
             }
 
             return 'Error handling working: ' . implode( ', ', $error_results );
+            } finally {
+                // Restore skip detection original setting
+                update_option( 'sbi_skip_plugin_detection', $original_setting );
+            }
         });
 
         return $tests;

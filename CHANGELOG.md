@@ -5,6 +5,12 @@ All notable changes to the KISS Smart Batch Installer will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.14] - 2025-08-24
+
+### Fixed
+- Always render Refresh button in Actions column even for non-plugin rows
+- Self Test: force real plugin detection for error-handling subtest (restores original setting)
+
 ## [1.0.13] - 2025-08-24
 
 ### Fixed
