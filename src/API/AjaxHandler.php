@@ -231,19 +231,35 @@ class AjaxHandler {
             // Determine the correct state based on detection result and installation status
             if ( is_wp_error( $detection_result ) ) {
                 $state = \SBI\Enums\PluginState::ERROR;
+                error_log( sprintf( 'SBI: Repository %s has error state: %s', $repo['full_name'], $detection_result->get_error_message() ) );
             } elseif ( ! $is_plugin ) {
                 $state = \SBI\Enums\PluginState::NOT_PLUGIN;
+                error_log( sprintf( 'SBI: Repository %s is not a WordPress plugin', $repo['full_name'] ) );
             } else {
                 // It's a WordPress plugin, check if it's installed
                 $plugin_slug = basename( $repo['full_name'] );
-                $plugin_file = $this->find_installed_plugin( $plugin_slug );
 
-                if ( empty( $plugin_file ) ) {
-                    $state = \SBI\Enums\PluginState::AVAILABLE;
-                } elseif ( is_plugin_active( $plugin_file ) ) {
-                    $state = \SBI\Enums\PluginState::INSTALLED_ACTIVE;
+                // Look for the plugin file in the detection result first
+                $detected_plugin_file = ! is_wp_error( $detection_result ) ? ($detection_result['plugin_file'] ?? '') : '';
+
+                // Find installed plugin
+                $installed_plugin_file = $this->find_installed_plugin( $plugin_slug );
+
+                if ( ! empty( $installed_plugin_file ) ) {
+                    // Plugin is installed
+                    if ( is_plugin_active( $installed_plugin_file ) ) {
+                        $state = \SBI\Enums\PluginState::INSTALLED_ACTIVE;
+                        error_log( sprintf( 'SBI: Plugin %s is installed and active', $repo['full_name'] ) );
+                    } else {
+                        $state = \SBI\Enums\PluginState::INSTALLED_INACTIVE;
+                        error_log( sprintf( 'SBI: Plugin %s is installed but inactive', $repo['full_name'] ) );
+                    }
+                    $plugin_file = $installed_plugin_file;
                 } else {
-                    $state = \SBI\Enums\PluginState::INSTALLED_INACTIVE;
+                    // Plugin is not installed - mark as available for installation
+                    $state = \SBI\Enums\PluginState::AVAILABLE;
+                    $plugin_file = $detected_plugin_file; // Use the detected plugin file path
+                    error_log( sprintf( 'SBI: Plugin %s is available for installation (detected file: %s)', $repo['full_name'], $plugin_file ) );
                 }
             }
 
@@ -251,7 +267,7 @@ class AjaxHandler {
                 'repository' => $repo,
                 'is_plugin' => $is_plugin,
                 'plugin_data' => ! is_wp_error( $detection_result ) ? $detection_result['plugin_data'] : [],
-                'plugin_file' => ! is_wp_error( $detection_result ) ? $detection_result['plugin_file'] : '',
+                'plugin_file' => $plugin_file ?? '',  // Make sure plugin_file is always set
                 'state' => $state->value,
                 'scan_method' => ! is_wp_error( $detection_result ) ? $detection_result['scan_method'] : '',
                 'error' => is_wp_error( $detection_result ) ? $detection_result->get_error_message() : null,
@@ -360,6 +376,17 @@ class AjaxHandler {
      * Install plugin from repository.
      */
     public function install_plugin(): void {
+        // Increase memory limit for installation
+        $original_memory_limit = ini_get( 'memory_limit' );
+        if ( function_exists( 'ini_set' ) ) {
+            ini_set( 'memory_limit', '512M' );
+        }
+
+        // Clean output buffer to prevent issues
+        if ( ob_get_level() ) {
+            ob_clean();
+        }
+
         $debug_steps = [];
         $start_time = microtime( true );
 
@@ -371,6 +398,7 @@ class AjaxHandler {
                 'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
             ];
 
+            $this->send_progress_update( 'Security Verification', 'info', 'Verifying nonce and user permissions...' );
             $this->verify_nonce_and_capability();
 
             $debug_steps[] = [
@@ -380,12 +408,16 @@ class AjaxHandler {
                 'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
             ];
 
+            $this->send_progress_update( 'Security Verification', 'success', 'Security checks passed' );
+
             // Step 2: Parameter validation
             $debug_steps[] = [
                 'step' => 'Parameter Validation',
                 'status' => 'starting',
                 'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
             ];
+
+            $this->send_progress_update( 'Parameter Validation', 'info', 'Validating installation parameters...' );
 
             $repo_name = sanitize_text_field( $_POST['repository'] ?? '' );
             $owner = sanitize_text_field( $_POST['owner'] ?? '' );
@@ -402,9 +434,12 @@ class AjaxHandler {
                     'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
                 ];
 
+                $this->send_progress_update( 'Parameter Validation', 'error', 'Repository name is required' );
+
                 wp_send_json_error( [
                     'message' => __( 'Repository name is required.', 'kiss-smart-batch-installer' ),
-                    'debug_steps' => $debug_steps
+                    'debug_steps' => $debug_steps,
+                    'progress_updates' => $this->progress_updates
                 ] );
             }
 
@@ -416,9 +451,12 @@ class AjaxHandler {
                     'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
                 ];
 
+                $this->send_progress_update( 'Parameter Validation', 'error', 'Repository owner is required' );
+
                 wp_send_json_error( [
                     'message' => __( 'Repository owner is required.', 'kiss-smart-batch-installer' ),
-                    'debug_steps' => $debug_steps
+                    'debug_steps' => $debug_steps,
+                    'progress_updates' => $this->progress_updates
                 ] );
             }
 
@@ -429,6 +467,8 @@ class AjaxHandler {
                 'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
             ];
 
+            $this->send_progress_update( 'Parameter Validation', 'success', "Validated parameters for {$owner}/{$repo_name}" );
+
             // Step 3: Plugin installation
             $debug_steps[] = [
                 'step' => 'Plugin Installation',
@@ -437,7 +477,12 @@ class AjaxHandler {
                 'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
             ];
 
+            $this->send_progress_update( 'Plugin Installation', 'info', "Starting installation of {$owner}/{$repo_name}..." );
+
             error_log( sprintf( 'SBI INSTALL: Calling installation service for %s/%s', $owner, $repo_name ) );
+
+            // Set progress callback for the installation service
+            $this->installation_service->set_progress_callback( [ $this, 'send_progress_update' ] );
 
             $result = $this->installation_service->install_and_activate( $owner, $repo_name, $activate );
 
@@ -467,6 +512,8 @@ class AjaxHandler {
                     'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
                 ];
 
+                $this->send_progress_update( 'Plugin Installation', 'error', 'Installation failed: ' . $enhanced_message );
+
                 error_log( sprintf( 'SBI INSTALL: Installation failed for %s/%s: %s (Code: %s)',
                     $owner, $repo_name, $error_message, $error_code ) );
 
@@ -474,6 +521,7 @@ class AjaxHandler {
                     'message' => $enhanced_message,
                     'repository' => $repo_name,
                     'debug_steps' => $debug_steps,
+                    'progress_updates' => $this->progress_updates,
                     'troubleshooting' => [
                         'check_repository_exists' => sprintf( 'https://github.com/%s/%s', $owner, $repo_name ),
                         'verify_repository_public' => 'Make sure the repository is public',
@@ -490,10 +538,22 @@ class AjaxHandler {
                 'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
             ];
 
+            $this->send_progress_update( 'Plugin Installation', 'success', "Successfully installed {$owner}/{$repo_name}" );
+
             error_log( sprintf( 'SBI INSTALL: Installation successful for %s/%s', $owner, $repo_name ) );
 
             // Step 4: Success response
             $total_time = round( ( microtime( true ) - $start_time ) * 1000, 2 );
+
+            // Clean up memory before sending response
+            if ( function_exists( 'gc_collect_cycles' ) ) {
+                gc_collect_cycles();
+            }
+
+            // Restore original memory limit
+            if ( function_exists( 'ini_set' ) && isset( $original_memory_limit ) ) {
+                ini_set( 'memory_limit', $original_memory_limit );
+            }
 
             wp_send_json_success( array_merge( $result, [
                 'message' => sprintf(
@@ -502,6 +562,7 @@ class AjaxHandler {
                 ),
                 'repository' => $repo_name,
                 'debug_steps' => $debug_steps,
+                'progress_updates' => $this->progress_updates,
                 'total_time' => $total_time
             ] ) );
 
@@ -517,10 +578,21 @@ class AjaxHandler {
             error_log( sprintf( 'SBI INSTALL: Exception during installation of %s/%s: %s',
                 $owner ?? 'unknown', $repo_name ?? 'unknown', $e->getMessage() ) );
 
+            // Clean up memory before sending error response
+            if ( function_exists( 'gc_collect_cycles' ) ) {
+                gc_collect_cycles();
+            }
+
+            // Restore original memory limit
+            if ( function_exists( 'ini_set' ) && isset( $original_memory_limit ) ) {
+                ini_set( 'memory_limit', $original_memory_limit );
+            }
+
             wp_send_json_error( [
                 'message' => sprintf( 'Installation failed: %s', $e->getMessage() ),
                 'repository' => $repo_name ?? 'unknown',
-                'debug_steps' => $debug_steps
+                'debug_steps' => $debug_steps,
+                'progress_updates' => $this->progress_updates
             ] );
         }
     }
@@ -810,6 +882,34 @@ class AjaxHandler {
             'message' => 'Debug detection completed',
             'results' => $results,
         ] );
+    }
+
+    /**
+     * Progress updates storage.
+     *
+     * @var array
+     */
+    private array $progress_updates = [];
+
+    /**
+     * Send progress update to frontend debugger.
+     */
+    private function send_progress_update( string $step, string $status, string $message = '' ): void {
+        // Only send progress updates if debug is enabled
+        if ( ! get_option( 'sbi_debug_ajax', false ) ) {
+            return;
+        }
+
+        // Store progress update for later inclusion in response
+        $this->progress_updates[] = [
+            'step' => $step,
+            'status' => $status,
+            'message' => $message,
+            'timestamp' => microtime( true )
+        ];
+
+        // Also log to error log for server-side debugging
+        error_log( sprintf( 'SBI PROGRESS: [%s] %s - %s', $status, $step, $message ) );
     }
 
     /**

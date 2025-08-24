@@ -63,10 +63,14 @@ class PluginDetectionService {
         // TEMPORARY: Skip plugin detection for testing to prevent hanging
         $skip_detection = get_option( 'sbi_skip_plugin_detection', false );
         if ( $skip_detection ) {
+            // Instead of returning false, return a more appropriate state
             return [
-                'is_plugin' => false,
-                'plugin_file' => '',
-                'plugin_data' => [],
+                'is_plugin' => true,  // Assume it's a plugin if we're skipping detection
+                'plugin_file' => $repository['name'] . '.php',  // Best guess at plugin file
+                'plugin_data' => [
+                    'Plugin Name' => $repository['name'],
+                    'Description' => $repository['description'] ?? '',
+                ],
                 'scan_method' => 'skipped_for_testing',
                 'error' => null,
             ];

@@ -5,6 +5,42 @@ All notable changes to the KISS Smart Batch Installer will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] - 2025-08-24
+
+### Known Issues
+- **CRITICAL**: Install buttons not appearing in repository table despite successful repository processing
+- Repository detection and plugin analysis working correctly (visible in debug logs)
+- Repository data being processed and stored properly with correct plugin states
+- Issue appears to be in the UI rendering layer - buttons not being generated in Actions column
+- Debug logging added to `RepositoryListTable::column_actions()` method for investigation
+
+### Investigation Status
+- Repository fetching: ✅ Working (GitHub API and web scraping)
+- Plugin detection: ✅ Working (correctly identifies WordPress plugins)
+- State management: ✅ Working (AVAILABLE, INSTALLED_INACTIVE, INSTALLED_ACTIVE states)
+- AJAX processing: ✅ Working (repositories processed successfully)
+- UI table rendering: ❌ **BROKEN** (action buttons not appearing)
+
+### Technical Details
+- Added comprehensive debug logging to track button generation process
+- Issue isolated to `column_actions()` method in `RepositoryListTable` class
+- Repository data structure appears correct with proper `is_plugin` and `installation_state` values
+- Next steps: Investigate why switch statement not matching plugin states for button generation
+
+## [1.0.10] - 2025-08-23
+
+### Fixed
+- **SECURITY**: Enhanced HTTPS enforcement for plugin downloads from GitHub
+- Added multiple layers of protection to prevent HTTP downgrade attacks
+- Implemented GitHub API-based download URL resolution as primary method
+- Added comprehensive HTTP request filtering to force HTTPS for all GitHub URLs
+- Enhanced error logging and debugging for download URL issues
+
+### Enhanced
+- Improved plugin installation reliability with better URL handling
+- Added fallback mechanisms for GitHub download URLs
+- Better error reporting for download-related issues
+
 ## [1.0.9] - 2025-08-23
 
 ### Added

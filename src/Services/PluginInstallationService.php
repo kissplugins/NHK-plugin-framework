@@ -11,6 +11,17 @@ use WP_Error;
 use Plugin_Upgrader;
 use WP_Upgrader_Skin;
 
+// Include WordPress upgrader and plugin management classes
+if ( ! class_exists( 'WP_Upgrader' ) ) {
+    require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+}
+if ( ! class_exists( 'Plugin_Upgrader' ) ) {
+    require_once ABSPATH . 'wp-admin/includes/class-plugin-upgrader.php';
+}
+if ( ! function_exists( 'activate_plugin' ) ) {
+    require_once ABSPATH . 'wp-admin/includes/plugin.php';
+}
+
 /**
  * Handles WordPress plugin installation from GitHub repositories.
  */
@@ -22,6 +33,13 @@ class PluginInstallationService {
      * @var GitHubService
      */
     private GitHubService $github_service;
+
+    /**
+     * Progress callback function.
+     *
+     * @var callable|null
+     */
+    private $progress_callback;
     
     /**
      * Constructor.
@@ -30,6 +48,28 @@ class PluginInstallationService {
      */
     public function __construct( GitHubService $github_service ) {
         $this->github_service = $github_service;
+    }
+
+    /**
+     * Set progress callback function.
+     *
+     * @param callable $callback Progress callback function.
+     */
+    public function set_progress_callback( callable $callback ): void {
+        $this->progress_callback = $callback;
+    }
+
+    /**
+     * Send progress update if callback is set.
+     *
+     * @param string $step Current step name.
+     * @param string $status Status (info, success, error).
+     * @param string $message Progress message.
+     */
+    private function send_progress( string $step, string $status, string $message ): void {
+        if ( $this->progress_callback ) {
+            call_user_func( $this->progress_callback, $step, $status, $message );
+        }
     }
     
     /**
@@ -57,28 +97,41 @@ class PluginInstallationService {
         error_log( 'SBI INSTALL SERVICE: Permission check passed' );
 
         // Get repository information
+        $this->send_progress( 'Repository Verification', 'info', 'Checking repository on GitHub...' );
         error_log( 'SBI INSTALL SERVICE: Getting repository information from GitHub' );
         $repo_info = $this->github_service->get_repository( $owner, $repo );
         if ( is_wp_error( $repo_info ) ) {
             error_log( sprintf( 'SBI INSTALL SERVICE: Failed to get repository info: %s', $repo_info->get_error_message() ) );
+            $this->send_progress( 'Repository Verification', 'error', 'Repository not found or inaccessible' );
             return $repo_info;
         }
 
+        $this->send_progress( 'Repository Verification', 'success', 'Repository found and accessible' );
         error_log( 'SBI INSTALL SERVICE: Repository information retrieved successfully' );
 
-        // Build download URL for the repository ZIP
-        $download_url = sprintf( 'https://github.com/%s/%s/archive/refs/heads/%s.zip',
-            urlencode( $owner ),
-            urlencode( $repo ),
-            urlencode( $branch )
-        );
+        // Try to get the download URL from GitHub API first
+        $this->send_progress( 'Download Preparation', 'info', 'Preparing download URL...' );
+        $api_download_url = $this->get_download_url_from_api( $owner, $repo, $branch );
 
-        error_log( sprintf( 'SBI INSTALL SERVICE: Download URL: %s', $download_url ) );
-        
-        // Include necessary WordPress files
-        error_log( 'SBI INSTALL SERVICE: Including WordPress upgrader files' );
-        if ( ! class_exists( 'Plugin_Upgrader' ) ) {
-            require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+        if ( ! is_wp_error( $api_download_url ) ) {
+            $download_url = $api_download_url;
+            $this->send_progress( 'Download Preparation', 'success', 'Using GitHub API download URL' );
+            error_log( sprintf( 'SBI INSTALL SERVICE: Using API download URL: %s', $download_url ) );
+        } else {
+            // Fallback to direct GitHub archive URL - Force HTTPS
+            $download_url = sprintf( 'https://github.com/%s/%s/archive/refs/heads/%s.zip',
+                urlencode( $owner ),
+                urlencode( $repo ),
+                urlencode( $branch )
+            );
+            $this->send_progress( 'Download Preparation', 'info', 'Using fallback download URL' );
+            error_log( sprintf( 'SBI INSTALL SERVICE: Using fallback download URL: %s', $download_url ) );
+        }
+
+        // Verify the URL is HTTPS
+        if ( strpos( $download_url, 'https://' ) !== 0 ) {
+            error_log( 'SBI INSTALL SERVICE: ERROR - Download URL is not HTTPS: ' . $download_url );
+            return new WP_Error( 'invalid_url', __( 'Download URL must use HTTPS.', 'kiss-smart-batch-installer' ) );
         }
 
         // Create a custom skin to capture output
@@ -90,24 +143,77 @@ class PluginInstallationService {
         $upgrader = new Plugin_Upgrader( $skin );
 
         // Install the plugin
+        $this->send_progress( 'Plugin Download', 'info', 'Downloading plugin from GitHub...' );
         error_log( sprintf( 'SBI INSTALL SERVICE: Starting plugin installation from %s', $download_url ) );
+
+        // Add filter to monitor and force HTTPS for all requests
+        $https_filter = function( $args, $url ) use ( $download_url ) {
+            // Force HTTPS for any GitHub-related URLs
+            if ( strpos( $url, 'github.com' ) !== false || strpos( $url, 'githubusercontent.com' ) !== false ) {
+                error_log( sprintf( 'SBI INSTALL SERVICE: HTTP request for GitHub URL: %s', $url ) );
+
+                // Convert HTTP to HTTPS if needed
+                if ( strpos( $url, 'http://' ) === 0 ) {
+                    $url = str_replace( 'http://', 'https://', $url );
+                    error_log( sprintf( 'SBI INSTALL SERVICE: Converted to HTTPS: %s', $url ) );
+                }
+
+                // Force HTTPS settings
+                $args['sslverify'] = true;
+                $args['timeout'] = 30;
+                $args['redirection'] = 5;
+            }
+            return $args;
+        };
+
+        add_filter( 'http_request_args', $https_filter, 10, 2 );
+
+        // Add filter to monitor responses
+        $response_filter = function( $response, $args, $url ) use ( $download_url ) {
+            if ( strpos( $url, 'github.com' ) !== false || strpos( $url, 'githubusercontent.com' ) !== false ) {
+                $response_code = wp_remote_retrieve_response_code( $response );
+                error_log( sprintf( 'SBI INSTALL SERVICE: HTTP response for %s: Code %d', $url, $response_code ) );
+            }
+            return $response;
+        };
+
+        add_filter( 'http_response', $response_filter, 10, 3 );
+
+        add_filter( 'http_response', function( $response, $args, $url ) use ( $download_url ) {
+            if ( $url === $download_url ) {
+                $response_code = wp_remote_retrieve_response_code( $response );
+                $headers = wp_remote_retrieve_headers( $response );
+                error_log( sprintf( 'SBI INSTALL SERVICE: HTTP response for %s: Code %d, Headers: %s',
+                    $url, $response_code, json_encode( $headers ) ) );
+            }
+            return $response;
+        }, 10, 3 );
+
         $result = $upgrader->install( $download_url );
+
+        // Remove filters after installation
+        remove_filter( 'http_request_args', $https_filter, 10 );
+        remove_filter( 'http_response', $response_filter, 10 );
 
         error_log( sprintf( 'SBI INSTALL SERVICE: Installation result: %s',
             is_wp_error( $result ) ? 'WP_Error: ' . $result->get_error_message() :
             ( $result ? 'Success' : 'Failed (false)' ) ) );
 
         if ( is_wp_error( $result ) ) {
+            $this->send_progress( 'Plugin Installation', 'error', 'Installation failed: ' . $result->get_error_message() );
             error_log( sprintf( 'SBI INSTALL SERVICE: Installation failed with WP_Error: %s', $result->get_error_message() ) );
             return $result;
         }
 
         if ( ! $result ) {
-            error_log( 'SBI INSTALL SERVICE: Installation failed - upgrader returned false' );
             $messages = $skin->get_messages();
+            $this->send_progress( 'Plugin Installation', 'error', 'Installation failed - see debug log for details' );
+            error_log( 'SBI INSTALL SERVICE: Installation failed - upgrader returned false' );
             error_log( sprintf( 'SBI INSTALL SERVICE: Upgrader messages: %s', implode( '; ', $messages ) ) );
             return new WP_Error( 'installation_failed', __( 'Plugin installation failed.', 'kiss-smart-batch-installer' ) );
         }
+
+        $this->send_progress( 'Plugin Installation', 'success', 'Plugin files downloaded and extracted successfully' );
 
         // Get the installed plugin file
         error_log( 'SBI INSTALL SERVICE: Getting plugin file information' );
@@ -223,12 +329,15 @@ class PluginInstallationService {
         
         // Activate if requested
         if ( $activate && isset( $install_result['plugin_file'] ) ) {
+            $this->send_progress( 'Plugin Activation', 'info', 'Activating plugin...' );
             $activate_result = $this->activate_plugin( $install_result['plugin_file'] );
-            
+
             if ( is_wp_error( $activate_result ) ) {
+                $this->send_progress( 'Plugin Activation', 'error', 'Activation failed: ' . $activate_result->get_error_message() );
                 $result['activation_error'] = $activate_result->get_error_message();
                 $result['activated'] = false;
             } else {
+                $this->send_progress( 'Plugin Activation', 'success', 'Plugin activated successfully' );
                 $result['activated'] = true;
                 $result['activation_message'] = $activate_result['message'];
             }
@@ -280,6 +389,55 @@ class PluginInstallationService {
         }
         
         return $results;
+    }
+
+    /**
+     * Get download URL from GitHub API.
+     *
+     * @param string $owner Repository owner.
+     * @param string $repo Repository name.
+     * @param string $branch Branch name.
+     * @return string|WP_Error Download URL or error.
+     */
+    private function get_download_url_from_api( string $owner, string $repo, string $branch ) {
+        $api_url = sprintf( 'https://api.github.com/repos/%s/%s/zipball/%s',
+            urlencode( $owner ),
+            urlencode( $repo ),
+            urlencode( $branch )
+        );
+
+        error_log( sprintf( 'SBI INSTALL SERVICE: Checking API download URL: %s', $api_url ) );
+
+        // Make a HEAD request to get the redirect URL
+        $response = wp_remote_head( $api_url, [
+            'timeout' => 15,
+            'redirection' => 0, // Don't follow redirects
+            'headers' => [
+                'User-Agent' => 'KISS-Smart-Batch-Installer/1.0.0',
+                'Accept' => 'application/vnd.github.v3+json',
+            ],
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            error_log( sprintf( 'SBI INSTALL SERVICE: API request failed: %s', $response->get_error_message() ) );
+            return $response;
+        }
+
+        $response_code = wp_remote_retrieve_response_code( $response );
+
+        // GitHub API returns 302 with Location header for download
+        if ( $response_code === 302 ) {
+            $headers = wp_remote_retrieve_headers( $response );
+            $location = $headers['location'] ?? '';
+
+            if ( ! empty( $location ) && strpos( $location, 'https://' ) === 0 ) {
+                error_log( sprintf( 'SBI INSTALL SERVICE: Got API redirect to: %s', $location ) );
+                return $location;
+            }
+        }
+
+        error_log( sprintf( 'SBI INSTALL SERVICE: API request returned code %d, falling back to direct URL', $response_code ) );
+        return new WP_Error( 'api_download_failed', 'Could not get download URL from API' );
     }
 }
 

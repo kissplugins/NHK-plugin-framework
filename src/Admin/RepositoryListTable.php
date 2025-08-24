@@ -337,16 +337,17 @@ class RepositoryListTable extends WP_List_Table {
         if ( ! $item['is_plugin'] ) {
             return '<span style="color: #999;">' . esc_html__( 'No actions available', 'kiss-smart-batch-installer' ) . '</span>';
         }
-        
+
         $state = $item['installation_state'];
-        $repo_name = $item['full_name'];
-        
+        $repo_full_name = $item['full_name'];
+        $repo_name = $item['name'];
+
         $actions = [];
-        
+
         // Extract owner from full_name (owner/repo)
         $owner = '';
         if ( isset( $item['full_name'] ) && strpos( $item['full_name'], '/' ) !== false ) {
-            $owner = explode( '/', $item['full_name'] )[0];
+            list($owner, $repo_name) = explode( '/', $item['full_name'], 2 );
         }
 
         switch ( $state ) {
@@ -359,20 +360,32 @@ class RepositoryListTable extends WP_List_Table {
                 );
                 break;
             case PluginState::INSTALLED_INACTIVE:
+                $plugin_file = $item['plugin_file'] ?? '';
+                if ( empty( $plugin_file ) ) {
+                    // Try to find the plugin file
+                    $plugin_slug = basename( $repo_full_name );
+                    $plugin_file = $this->find_installed_plugin( $plugin_slug );
+                }
                 $actions[] = sprintf(
                     '<button type="button" class="button button-secondary sbi-activate-plugin" data-repo="%s" data-owner="%s" data-plugin-file="%s">%s</button>',
                     esc_attr( $repo_name ),
                     esc_attr( $owner ),
-                    esc_attr( $item['plugin_file'] ?? '' ),
+                    esc_attr( $plugin_file ),
                     esc_html__( 'Activate', 'kiss-smart-batch-installer' )
                 );
                 break;
             case PluginState::INSTALLED_ACTIVE:
+                $plugin_file = $item['plugin_file'] ?? '';
+                if ( empty( $plugin_file ) ) {
+                    // Try to find the plugin file
+                    $plugin_slug = basename( $repo_full_name );
+                    $plugin_file = $this->find_installed_plugin( $plugin_slug );
+                }
                 $actions[] = sprintf(
                     '<button type="button" class="button button-secondary sbi-deactivate-plugin" data-repo="%s" data-owner="%s" data-plugin-file="%s">%s</button>',
                     esc_attr( $repo_name ),
                     esc_attr( $owner ),
-                    esc_attr( $item['plugin_file'] ?? '' ),
+                    esc_attr( $plugin_file ),
                     esc_html__( 'Deactivate', 'kiss-smart-batch-installer' )
                 );
                 break;
@@ -381,11 +394,33 @@ class RepositoryListTable extends WP_List_Table {
         // Always add refresh action
         $actions[] = sprintf(
             '<button type="button" class="button button-small sbi-refresh-status" data-repo="%s">%s</button>',
-            esc_attr( $repo_name ),
+            esc_attr( $repo_full_name ),
             esc_html__( 'Refresh', 'kiss-smart-batch-installer' )
         );
-        
+
         return implode( ' ', $actions );
+    }
+
+    /**
+     * Helper method to find installed plugin file.
+     */
+    private function find_installed_plugin( string $plugin_slug ): string {
+        if ( ! function_exists( 'get_plugins' ) ) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        $all_plugins = get_plugins();
+
+        foreach ( $all_plugins as $plugin_file => $plugin_data ) {
+            $plugin_dir = dirname( $plugin_file );
+
+            // Check if plugin directory matches the slug
+            if ( $plugin_dir === $plugin_slug || $plugin_file === $plugin_slug . '.php' ) {
+                return $plugin_file;
+            }
+        }
+
+        return '';
     }
 
     /**

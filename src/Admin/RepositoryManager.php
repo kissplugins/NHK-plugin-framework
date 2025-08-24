@@ -903,6 +903,15 @@ class RepositoryManager {
 
                 // Initialize debug
                 debugLog('🚀 KISS Smart Batch Installer debug initialized');
+
+                // Create global debug object for progress updates
+                window.sbiDebug = {
+                    addEntry: function(status, step, message) {
+                        var icon = status === 'error' ? '❌' : status === 'success' ? '✅' : status === 'info' ? 'ℹ️' : '⚠️';
+                        var fullMessage = step + ': ' + message;
+                        debugLog(icon + ' ' + fullMessage, status === 'error' ? 'error' : status === 'success' ? 'success' : 'info');
+                    }
+                };
             }
 
             // Start progressive loading if organization is set
@@ -1169,98 +1178,7 @@ class RepositoryManager {
                 return text.replace(/[&<>"']/g, function(m) { return map[m]; });
             }
 
-            // Install plugin button
-            $(document).on('click', '.sbi-install-plugin', function() {
-                var button = $(this);
-                var repo = button.data('repo');
-                var owner = button.data('owner');
-
-                button.prop('disabled', true).text('<?php esc_html_e( 'Installing...', 'kiss-smart-batch-installer' ); ?>');
-
-                // Add debug entry for install start
-                if (window.sbiDebug) {
-                    window.sbiDebug.addEntry('info', 'Install Started',
-                        'Starting installation for ' + owner + '/' + repo);
-                }
-
-                $.post(ajaxurl, {
-                    action: 'sbi_install_plugin',
-                    repository: repo,
-                    owner: owner,
-                    activate: false,
-                    nonce: ajaxNonce
-                }, function(response) {
-                    // Add debug information
-                    if (window.sbiDebug && response.data && response.data.debug_steps) {
-                        response.data.debug_steps.forEach(function(step) {
-                            var level = step.status === 'failed' ? 'error' :
-                                       step.status === 'completed' ? 'success' : 'info';
-                            var message = step.step + ': ' + (step.message || step.status);
-                            if (step.error) {
-                                message += ' - Error: ' + step.error;
-                            }
-                            if (step.time) {
-                                message += ' (' + step.time + 'ms)';
-                            }
-                            window.sbiDebug.addEntry(level, 'Install Step', message);
-                        });
-                    }
-
-                    if (response.success) {
-                        if (window.sbiDebug) {
-                            var totalTime = response.data.total_time || 'unknown';
-                            window.sbiDebug.addEntry('success', 'Install Completed',
-                                'Successfully installed ' + owner + '/' + repo + ' in ' + totalTime + 'ms');
-                        }
-
-                        button.text('<?php esc_html_e( 'Installed', 'kiss-smart-batch-installer' ); ?>').removeClass('button-primary').addClass('button-secondary');
-                        // Refresh the page to update status
-                        location.reload();
-                    } else {
-                        if (window.sbiDebug) {
-                            window.sbiDebug.addEntry('error', 'Install Failed',
-                                'Installation failed for ' + owner + '/' + repo + ': ' + (response.data.message || 'Unknown error'));
-
-                            // Add troubleshooting information if available
-                            if (response.data.troubleshooting) {
-                                var troubleshooting = response.data.troubleshooting;
-                                if (troubleshooting.check_repository_exists) {
-                                    window.sbiDebug.addEntry('info', 'Troubleshooting',
-                                        'Check if repository exists: ' + troubleshooting.check_repository_exists);
-                                }
-                                if (troubleshooting.verify_repository_public) {
-                                    window.sbiDebug.addEntry('info', 'Troubleshooting',
-                                        troubleshooting.verify_repository_public);
-                                }
-                                if (troubleshooting.check_spelling) {
-                                    window.sbiDebug.addEntry('info', 'Troubleshooting',
-                                        troubleshooting.check_spelling);
-                                }
-                            }
-                        }
-
-                        // Enhanced error message for 404 errors
-                        var errorMessage = response.data.message || 'Unknown error';
-                        if (errorMessage.indexOf('404') !== -1 || errorMessage.indexOf('not found') !== -1) {
-                            errorMessage += '\n\nTroubleshooting:\n';
-                            errorMessage += '• Check if the repository exists at: https://github.com/' + owner + '/' + repo + '\n';
-                            errorMessage += '• Verify the repository is public (not private)\n';
-                            errorMessage += '• Check that owner and repository names are spelled correctly';
-                        }
-
-                        alert(errorMessage);
-                        button.prop('disabled', false).text('<?php esc_html_e( 'Install', 'kiss-smart-batch-installer' ); ?>');
-                    }
-                }).fail(function(xhr, status, error) {
-                    if (window.sbiDebug) {
-                        window.sbiDebug.addEntry('error', 'Install AJAX Failed',
-                            'AJAX request failed for ' + owner + '/' + repo + ': ' + error);
-                    }
-
-                    alert('<?php esc_html_e( 'Installation request failed. Please try again.', 'kiss-smart-batch-installer' ); ?>');
-                    button.prop('disabled', false).text('<?php esc_html_e( 'Install', 'kiss-smart-batch-installer' ); ?>');
-                });
-            });
+            // Install plugin button - handled by admin.js
             
             // Activate plugin button
             $(document).on('click', '.sbi-activate-plugin', function() {

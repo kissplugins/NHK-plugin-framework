@@ -17,6 +17,37 @@
     SBI.init = function() {
         SBI.bindEvents();
         SBI.initProgressiveLoading();
+        SBI.initDebugSystem();
+    };
+
+    /**
+     * Initialize debug system
+     */
+    SBI.initDebugSystem = function() {
+        // Create global debug object if it doesn't exist
+        if (typeof window.sbiDebug === 'undefined') {
+            window.sbiDebug = {
+                addEntry: function(status, step, message) {
+                    // Fallback debug function if main debug system isn't available
+                    console.log('[SBI Debug]', status, step, message);
+                }
+            };
+        }
+    };
+
+    /**
+     * Process progress updates from AJAX response
+     */
+    SBI.processProgressUpdates = function(progressUpdates) {
+        if (!progressUpdates || !Array.isArray(progressUpdates)) {
+            return;
+        }
+
+        progressUpdates.forEach(function(update) {
+            if (window.sbiDebug && typeof window.sbiDebug.addEntry === 'function') {
+                window.sbiDebug.addEntry(update.status, update.step, update.message);
+            }
+        });
     };
 
     /**
@@ -25,15 +56,15 @@
     SBI.bindEvents = function() {
         // Form submissions
         $(document).on('submit', '.sbi-form', SBI.handleFormSubmit);
-        
+
         // Button clicks
         $(document).on('click', '.sbi-button', SBI.handleButtonClick);
-        
+
         // Repository actions
         $(document).on('click', '.sbi-install-plugin', SBI.installPlugin);
         $(document).on('click', '.sbi-activate-plugin', SBI.activatePlugin);
         $(document).on('click', '.sbi-deactivate-plugin', SBI.deactivatePlugin);
-        
+
         // Refresh actions
         $(document).on('click', '.sbi-refresh-repository', SBI.refreshRepository);
     };
@@ -76,37 +107,121 @@
      */
     SBI.installPlugin = function(e) {
         e.preventDefault();
-        
+
         var $button = $(this);
         var repository = $button.data('repo');
-        
-        if (!repository) {
-            SBI.showMessage('Repository information missing', 'error');
+        var owner = $button.data('owner');
+
+        if (!repository || !owner) {
+            SBI.showMessage('Repository and owner information required', 'error');
             return;
         }
-        
-        $button.prop('disabled', true).text(sbiAjax.strings.loading);
-        
-        $.post(sbiAjax.ajaxurl, {
-            action: 'sbi_install_plugin',
-            repository: repository,
-            nonce: sbiAjax.nonce
+
+        $button.prop('disabled', true).text('Installing...');
+
+        // Add debug entry for install start
+        if (window.sbiDebug) {
+            window.sbiDebug.addEntry('info', 'Install Started',
+                'Starting installation for ' + owner + '/' + repository);
+        }
+
+        $.ajax({
+            url: sbiAjax.ajaxurl,
+            type: 'POST',
+            timeout: 60000, // 60 second timeout
+            data: {
+                action: 'sbi_install_plugin',
+                repository: repository,
+                owner: owner,
+                activate: false,
+                nonce: sbiAjax.nonce
+            }
         })
         .done(function(response) {
+            // Process progress updates first
+            if (window.sbiDebug && response.data && response.data.progress_updates) {
+                response.data.progress_updates.forEach(function(update) {
+                    window.sbiDebug.addEntry(update.status, update.step, update.message);
+                });
+            }
+
+            // Add debug information
+            if (window.sbiDebug && response.data && response.data.debug_steps) {
+                response.data.debug_steps.forEach(function(step) {
+                    var level = step.status === 'failed' ? 'error' :
+                               step.status === 'completed' ? 'success' : 'info';
+                    var message = step.step + ': ' + (step.message || step.status);
+                    if (step.error) {
+                        message += ' - Error: ' + step.error;
+                    }
+                    if (step.time) {
+                        message += ' (' + step.time + 'ms)';
+                    }
+                    window.sbiDebug.addEntry(level, 'Install Step', message);
+                });
+            }
+
             if (response.success) {
+                if (window.sbiDebug) {
+                    var totalTime = response.data.total_time || 'unknown';
+                    window.sbiDebug.addEntry('success', 'Install Completed',
+                        'Successfully installed ' + owner + '/' + repository + ' in ' + totalTime + 'ms');
+                }
+
                 SBI.showMessage('Plugin installed successfully', 'success');
-                $button.text('Installed').removeClass('sbi-install-plugin');
+                $button.text('Installed').removeClass('sbi-install-plugin').removeClass('button-primary').addClass('button-secondary');
                 // Refresh the page to update status
                 setTimeout(function() {
                     location.reload();
                 }, 1000);
             } else {
-                SBI.showMessage(response.data.message || 'Installation failed', 'error');
+                if (window.sbiDebug) {
+                    window.sbiDebug.addEntry('error', 'Install Failed',
+                        'Installation failed for ' + owner + '/' + repository + ': ' + (response.data.message || 'Unknown error'));
+
+                    // Add troubleshooting information if available
+                    if (response.data.troubleshooting) {
+                        var troubleshooting = response.data.troubleshooting;
+                        if (troubleshooting.check_repository_exists) {
+                            window.sbiDebug.addEntry('info', 'Troubleshooting',
+                                'Check if repository exists: ' + troubleshooting.check_repository_exists);
+                        }
+                        if (troubleshooting.verify_repository_public) {
+                            window.sbiDebug.addEntry('info', 'Troubleshooting',
+                                troubleshooting.verify_repository_public);
+                        }
+                        if (troubleshooting.check_spelling) {
+                            window.sbiDebug.addEntry('info', 'Troubleshooting',
+                                troubleshooting.check_spelling);
+                        }
+                    }
+                }
+
+                // Enhanced error message for 404 errors
+                var errorMessage = response.data.message || 'Unknown error';
+                if (errorMessage.indexOf('404') !== -1 || errorMessage.indexOf('not found') !== -1) {
+                    errorMessage += '\n\nTroubleshooting:\n';
+                    errorMessage += '• Check if the repository exists at: https://github.com/' + owner + '/' + repository + '\n';
+                    errorMessage += '• Verify the repository is public (not private)\n';
+                    errorMessage += '• Check that owner and repository names are spelled correctly';
+                }
+
+                SBI.showMessage(errorMessage, 'error');
                 $button.prop('disabled', false).text('Install');
             }
         })
-        .fail(function() {
-            SBI.showMessage('Installation request failed', 'error');
+        .fail(function(xhr, status, error) {
+            if (window.sbiDebug) {
+                window.sbiDebug.addEntry('error', 'Install AJAX Failed',
+                    'AJAX request failed for ' + owner + '/' + repository + ': ' + error + ' (Status: ' + status + ')');
+            }
+
+            var errorMsg = 'Installation request failed. Please try again.';
+            if (status === 'timeout') {
+                errorMsg = 'Installation timed out. The plugin may still be installing in the background. Please refresh the page to check if it was installed successfully.';
+            }
+
+            SBI.showMessage(errorMsg, 'error');
             $button.prop('disabled', false).text('Install');
         });
     };
