@@ -27,13 +27,13 @@ This checklist outlines the pragmatic, phased integration of a Finite State Mach
 
 **Goal:** Formalize state management for a critical, self-contained component.
 
-  * **1. Create a Generic FSM Service:**
-      * Develop a basic `FiniteStateMachine` service/class within the framework. It should be able to define states, valid transitions, and trigger actions on state changes.
-  * **2. Integrate FSM into `Abstract_Background_Job`:**
-      * Inject the FSM service into `framework/Abstracts/Abstract_Background_Job.php`.
-      * Define the states: `pending`, `scheduled`, `running`, `completed`, `failed`, `cancelled`.
-      * Define the valid transitions (e.g., `scheduled` can go to `running` or `cancelled`, but not directly to `completed`).
-      * Replace direct manipulation of the `$status` property with FSM transition methods (e.g., `$this->fsm->transitionTo('running')`). This will throw an error if an invalid state change is attempted.
+  * [x] **1. Create a Generic FSM Service:**
+      * [x] Develop a basic `FiniteStateMachine` service/class within the framework. It should be able to define states, valid transitions, and trigger actions on state changes.
+  * [x] **2. Integrate FSM into `Abstract_Background_Job`:**
+      * [x] Inject the FSM service into `framework/Abstracts/Abstract_Background_Job.php`.
+      * [x] Define the states: `pending`, `scheduled`, `running`, `completed`, `failed`, `cancelled`.
+      * [x] Define the valid transitions (e.g., `scheduled` can go to `running` or `cancelled`, but not directly to `completed`).
+      * [x] Replace direct manipulation of the `$status` property with FSM transition methods (e.g., `$this->fsm->transitionTo('running')`). This will throw an error if an invalid state change is attempted.
 
 -----
 
