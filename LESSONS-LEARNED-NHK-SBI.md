@@ -21,6 +21,16 @@ During the development of the KISS Smart Batch Installer (SBI) based on the NHK 
 - **Root Cause**: No fallback mechanisms or error recovery
 - **Solution**: Multi-method API access with intelligent fallbacks
 
+### 4. **State Management Inconsistencies** *(NEW - v1.0.15+)*
+- **Problem**: Plugin Status showed "WordPress Plugin" while Installation State showed "Not Plugin"
+- **Root Cause**: Multiple sources of truth for state without validation or coordination
+- **Solution**: Lightweight finite state machine with validated transitions and event logging
+
+### 5. **Debug Information Loss During Refactoring** *(NEW - v1.0.15+)*
+- **Problem**: Critical debug logging accidentally removed during code improvements
+- **Root Cause**: No protection mechanism for essential debugging infrastructure
+- **Solution**: "DO NOT REMOVE" guard comments and structured debug preservation
+
 ## Framework Improvement Opportunities
 
 ### 🎯 **Priority 1: Self-Testing Infrastructure**
@@ -66,26 +76,50 @@ framework/Traits/NHK_Retry_Logic_Trait.php
 framework/Traits/NHK_Timeout_Protection_Trait.php
 ```
 
-### 🎯 **Priority 3: State Management & Data Consistency**
+### 🎯 **Priority 3: Finite State Machine & Event Logging** *(UPDATED - v1.0.15+)*
 
-**Current Gap**: No standardized state management patterns
-**SBI Solution**: Enum-based state management with validation
+**Current Gap**: No standardized state management patterns with transition validation
+**SBI Solution**: Lightweight FSM with validated transitions and transient-backed event logging
 
 #### Actionable Checklist:
-- [ ] Extract `PluginState` enum pattern into generic framework enum
-- [ ] Create `NHK_State_Manager` abstract base class
-- [ ] Add data structure consistency validation methods
-- [ ] Include batch state operations
-- [ ] Add cache-aware state persistence
-- [ ] Create state transition logging
-- [ ] Add state validation helpers
-- [ ] Document state management best practices
+- [ ] Extract `StateManager::transition()` pattern into generic framework FSM
+- [ ] Create `NHK_State_Machine` abstract base class with transition validation
+- [ ] Add allowed transitions map configuration
+- [ ] Include per-entity event logging with ring buffer (transient-backed)
+- [ ] Add transition blocking and logging for invalid moves
+- [ ] Create `get_events()` method for debugging and audit trails
+- [ ] Add force parameter for system-initiated transitions (refresh, etc.)
+- [ ] Include Self Tests for FSM validation and event log structure
+- [ ] Document FSM patterns and transition design best practices
 
 #### Implementation Files to Create:
 ```
-framework/Abstracts/NHK_State_Manager.php
-framework/Enums/NHK_Base_State.php
-framework/Traits/NHK_Data_Validation_Trait.php
+framework/Abstracts/NHK_State_Machine.php
+framework/Traits/NHK_Event_Logging_Trait.php
+framework/Traits/NHK_Transition_Validation_Trait.php
+framework/Templates/fsm-self-tests-template.php
+```
+
+### 🎯 **Priority 4: Debug Preservation & Enhanced Diagnostics** *(NEW - v1.0.15+)*
+
+**Current Gap**: Critical debug information lost during refactoring; insufficient AJAX error details
+**SBI Solution**: Protected debug logging with guard comments and enhanced AJAX diagnostics
+
+#### Actionable Checklist:
+- [ ] Create `NHK_Debug_Guard` utility for protecting critical debug code
+- [ ] Establish "DO NOT REMOVE" comment standards for essential logging
+- [ ] Add AJAX fail handler enhancement patterns (HTTP codes, response snippets)
+- [ ] Create debug preservation validation in framework Self Tests
+- [ ] Include structured error context capture (URL, method, response size)
+- [ ] Add debug mode detection and conditional verbose logging
+- [ ] Document debug preservation best practices and standards
+- [ ] Create linting rules to detect removal of protected debug code
+
+#### Implementation Files to Create:
+```
+framework/Utilities/NHK_Debug_Guard.php
+framework/Traits/NHK_Enhanced_AJAX_Diagnostics_Trait.php
+framework/Documentation/debug-preservation-standards.md
 ```
 
 ## Secondary Improvements
@@ -112,16 +146,18 @@ framework/Traits/NHK_Data_Validation_Trait.php
 - [ ] Create consistent error display components
 - [ ] Document UI component usage
 
-### 🔧 **Enhanced Error Handling & Logging**
+### 🔧 **Enhanced Error Handling & Debug Preservation** *(UPDATED - v1.0.15+)*
 
 #### Actionable Checklist:
 - [ ] Extract detailed error logging patterns from SBI
-- [ ] Create `NHK_Error_Handler` utility class
-- [ ] Add context-aware logging methods
-- [ ] Include error recovery guidance in messages
+- [ ] Create `NHK_Error_Handler` utility class with HTTP code analysis
+- [ ] Add context-aware logging methods with response snippet capture
+- [ ] Include error recovery guidance in messages (403/404/SSL hints)
 - [ ] Add performance timing utilities
-- [ ] Create debug mode management
-- [ ] Document error handling best practices
+- [ ] Create debug mode management with preservation guards
+- [ ] Implement "DO NOT REMOVE" comment standards for critical debug code
+- [ ] Add AJAX fail handler enhancement patterns (HTTP codes, response snippets)
+- [ ] Document error handling and debug preservation best practices
 
 ## Implementation Strategy
 
@@ -285,58 +321,87 @@ abstract class NHK_AJAX_Handler_Enhanced extends NHK_AJAX_Handler {
 }
 ```
 
-### State Management Template
+### Finite State Machine Template *(NEW - v1.0.15+)*
 ```php
-// framework/Abstracts/NHK_State_Manager.php
-abstract class NHK_State_Manager {
+// framework/Abstracts/NHK_State_Machine.php
+abstract class NHK_State_Machine {
+
+    protected array $allowed_transitions = [];
+    private const EVENT_LOG_TTL = DAY_IN_SECONDS;
+    private const EVENT_LOG_LIMIT = 30;
 
     abstract protected function get_state_enum_class();
+    abstract protected function init_transitions(): void;
 
-    protected function set_state($entity_id, $state) {
-        $enum_class = $this->get_state_enum_class();
-        if (!$state instanceof $enum_class) {
-            throw new InvalidArgumentException("State must be instance of {$enum_class}");
+    /**
+     * Transition to a new state with validation and event logging.
+     */
+    public function transition(string $entity_id, $to_state, array $context = [], bool $force = false): void {
+        $from_state_value = $this->get_current_state_value($entity_id);
+        $to_value = $to_state->value;
+
+        // Initialize transition map on first use
+        if (empty($this->allowed_transitions)) {
+            $this->init_transitions();
         }
 
-        $option_key = $this->get_state_option_key($entity_id);
-        update_option($option_key, $state->value);
-
-        // Log state change for debugging
-        error_log("State changed for {$entity_id}: {$state->value}");
-    }
-
-    protected function get_batch_states($entity_ids) {
-        $states = [];
-        $enum_class = $this->get_state_enum_class();
-
-        foreach ($entity_ids as $entity_id) {
-            $option_key = $this->get_state_option_key($entity_id);
-            $state_value = get_option($option_key, 'unknown');
-            $states[$entity_id] = $enum_class::from($state_value);
-        }
-
-        return $states;
-    }
-
-    protected function validate_data_consistency($data_structure) {
-        $required_fields = $this->get_required_fields();
-        $missing_fields = [];
-
-        foreach ($required_fields as $field) {
-            if (!isset($data_structure[$field])) {
-                $missing_fields[] = $field;
+        if (!$force) {
+            $allowed = $this->allowed_transitions[$from_state_value] ?? [];
+            if (!in_array($to_value, $allowed, true)) {
+                // Log and ignore invalid transition to keep system robust
+                $this->log_event($entity_id, 'transition_blocked', [
+                    'from' => $from_state_value,
+                    'to' => $to_value,
+                    'reason' => 'invalid_transition',
+                    'context' => $context,
+                ]);
+                return;
             }
         }
 
-        if (!empty($missing_fields)) {
-            throw new Exception('Missing required fields: ' . implode(', ', $missing_fields));
-        }
-
-        return true;
+        $this->set_state($entity_id, $to_state);
+        $this->log_event($entity_id, 'transition', [
+            'from' => $from_state_value,
+            'to' => $to_value,
+            'context' => $context,
+        ]);
     }
 
-    abstract protected function get_required_fields();
-    abstract protected function get_state_option_key($entity_id);
+    /**
+     * Append event to per-entity transient-backed ring buffer.
+     */
+    private function log_event(string $entity_id, string $event, array $data = []): void {
+        $key = $this->get_event_log_key($entity_id);
+        $events = get_transient($key);
+        if (!is_array($events)) { $events = []; }
+
+        $events[] = [
+            't' => time(),
+            'event' => $event,
+            'data' => $data,
+        ];
+
+        // Cap size
+        if (count($events) > self::EVENT_LOG_LIMIT) {
+            $events = array_slice($events, -self::EVENT_LOG_LIMIT);
+        }
+
+        set_transient($key, $events, self::EVENT_LOG_TTL);
+    }
+
+    /**
+     * Read recent events for an entity (for Self Tests/UI).
+     */
+    public function get_events(string $entity_id, int $limit = 10): array {
+        $key = $this->get_event_log_key($entity_id);
+        $events = get_transient($key);
+        if (!is_array($events)) { return []; }
+        return array_slice($events, -$limit);
+    }
+
+    abstract protected function get_current_state_value(string $entity_id): string;
+    abstract protected function set_state(string $entity_id, $state): void;
+    abstract protected function get_event_log_key(string $entity_id): string;
 }
 ```
 
@@ -358,11 +423,13 @@ abstract class NHK_State_Manager {
 - [ ] Add timeout protection to long-running operations
 - [ ] Implement comprehensive error logging
 
-### Step 4: Standardize State Management
+### Step 4: Implement Finite State Machine *(NEW - v1.0.15+)*
 - [ ] Create plugin-specific state enums
-- [ ] Extend `NHK_State_Manager`
-- [ ] Add data validation to state changes
-- [ ] Implement batch state operations
+- [ ] Extend `NHK_State_Machine`
+- [ ] Define allowed transitions map in `init_transitions()`
+- [ ] Replace direct state setters with `transition()` calls
+- [ ] Add Self Tests for FSM validation and event logging
+- [ ] Implement debug preservation guards for critical logging
 
 ## Framework Version Compatibility
 
@@ -372,12 +439,13 @@ abstract class NHK_State_Manager {
 - Manual error handling
 - No built-in testing
 
-### Enhanced Framework (v2.x)
-- Advanced AJAX with retry logic
-- Self-testing infrastructure
-- Standardized state management
-- Comprehensive error handling
-- Progressive UI components
+### Enhanced Framework (v2.x) *(UPDATED - v1.0.15+)*
+- Advanced AJAX with retry logic and timeout protection
+- Self-testing infrastructure with FSM validation
+- Finite state machine with validated transitions and event logging
+- Comprehensive error handling with debug preservation
+- Progressive UI components with always-available refresh
+- Enhanced AJAX diagnostics with HTTP codes and response snippets
 
 ### Migration Path
 1. **Backward Compatible**: New features are opt-in
@@ -387,8 +455,9 @@ abstract class NHK_State_Manager {
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Created**: 2025-08-24
-**Based on**: SBI v1.0.12 development experience
+**Updated**: 2025-08-24 (Added FSM and debug preservation lessons)
+**Based on**: SBI v1.0.16 development experience including architectural refactoring
 **Target Framework**: NHK Plugin Framework v2.0+
 **Review Status**: Ready for framework team review
