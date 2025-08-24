@@ -10,16 +10,16 @@ This checklist outlines the pragmatic, phased integration of a Finite State Mach
 
 **Goal:** Immediately improve debugging and user experience for all AJAX interactions.
 
-  * **1. Integrate `ajax-error-handler.js`:**
-      * Add the `ajax-error-handler.js` file to the `/assets/js/` directory.
-      * Create a new `AjaxErrorHandler` class instance in a core admin JavaScript file.
-      * Ensure it is enqueued and available in the admin area.
-  * **2. Refactor Existing AJAX Calls:**
-      * Update the AJAX calls in `src/Admin/SettingsPage.php` (for both the "Purge Event Cache" and "Run Health Checks" buttons) to use the new handler.
-      * Replace the basic `success`/`error` callbacks with the `ajaxHandler.makeRequest()` wrapper.
-      * Verify that the detailed error logging and user notifications are functioning correctly.
-  * **3. Update Frontend Shortcode AJAX:**
-      * Modify the `nhk-event-filter.js` script used by the `EventListShortcode` to leverage the new error handler for frontend event filtering, ensuring a consistent and robust experience for end-users.
+  * [x] **1. Integrate `ajax-error-handler.js`:**
+      * [x] Add the `ajax-error-handler.js` file to the `/assets/js/` directory.
+      * [x] Create a new `AjaxErrorHandler` class instance in a core admin JavaScript file.
+      * [x] Ensure it is enqueued and available in the admin area.
+  * [x] **2. Refactor Existing AJAX Calls:**
+      * [x] Update the AJAX calls in `src/Admin/SettingsPage.php` (for both the "Purge Event Cache" and "Run Health Checks" buttons) to use the new handler.
+      * [x] Replace the basic `success`/`error` callbacks with the `ajaxHandler.makeRequest()` wrapper.
+      * [x] Verify that the detailed error logging and user notifications are functioning correctly.
+  * [x] **3. Update Frontend Shortcode AJAX:**
+      * [x] Modify the `nhk-event-filter.js` script used by the `EventListShortcode` to leverage the new error handler for frontend event filtering, ensuring a consistent and robust experience for end-users.
 
 -----
 
