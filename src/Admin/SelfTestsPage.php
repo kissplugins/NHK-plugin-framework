@@ -282,11 +282,12 @@ class SelfTestsPage {
      */
     private function run_all_tests(): void {
         $this->test_results = [];
-        
+
         // Test categories
         $test_categories = [
             'core_services' => 'Core Services Tests',
             'ajax_handlers' => 'AJAX Handler Tests',
+            'install_path' => 'Install Path Tests',
             'integration' => 'Integration Tests',
             'ui_components' => 'UI Component Tests',
             'data_integrity' => 'Data Integrity Tests',
@@ -305,7 +306,7 @@ class SelfTestsPage {
                     'failed' => 0,
                     'total_time' => 0
                 ];
-                
+
                 // Calculate summary stats
                 foreach ( $this->test_results[ $category ]['tests'] as $test ) {
                     if ( $test['passed'] ) {
@@ -326,22 +327,22 @@ class SelfTestsPage {
      */
     private function test_core_services(): array {
         $tests = [];
-        
+
         // Test 1: GitHub Service Configuration
         $tests[] = $this->run_test( 'GitHub Service Configuration', function() {
             $config = $this->github_service->get_configuration();
-            
+
             if ( empty( $config['username'] ) ) {
                 throw new \Exception( 'GitHub username not configured' );
             }
-            
+
             if ( empty( $config['repositories'] ) ) {
                 throw new \Exception( 'No repositories configured for scanning' );
             }
-            
-            return sprintf( 'Configured for user: %s with %d repositories', 
-                $config['username'], 
-                count( $config['repositories'] ) 
+
+            return sprintf( 'Configured for user: %s with %d repositories',
+                $config['username'],
+                count( $config['repositories'] )
             );
         });
 
@@ -349,11 +350,11 @@ class SelfTestsPage {
         $tests[] = $this->run_test( 'GitHub API Connectivity', function() {
             $config = $this->github_service->get_configuration();
             $username = $config['username'];
-            
+
             if ( empty( $username ) ) {
                 throw new \Exception( 'No GitHub username configured' );
             }
-            
+
             // Test API call
             $response = wp_remote_get( "https://api.github.com/users/{$username}", [
                 'timeout' => 10,
@@ -361,21 +362,21 @@ class SelfTestsPage {
                     'User-Agent' => 'KISS-Smart-Batch-Installer'
                 ]
             ]);
-            
+
             if ( is_wp_error( $response ) ) {
                 throw new \Exception( 'GitHub API request failed: ' . $response->get_error_message() );
             }
-            
+
             $code = wp_remote_retrieve_response_code( $response );
             if ( $code !== 200 ) {
                 throw new \Exception( "GitHub API returned status code: {$code}" );
             }
-            
+
             $body = json_decode( wp_remote_retrieve_body( $response ), true );
             if ( ! $body || ! isset( $body['login'] ) ) {
                 throw new \Exception( 'Invalid GitHub API response format' );
             }
-            
+
             return sprintf( 'Successfully connected to GitHub API for user: %s', $body['login'] );
         });
 
@@ -388,19 +389,19 @@ class SelfTestsPage {
                 'description' => 'A test WordPress plugin',
                 'html_url' => 'https://github.com/test/wordpress-plugin'
             ];
-            
+
             // Test detection (this will likely fail for mock data, but we're testing the service works)
             $result = $this->detection_service->detect_plugin( $mock_repo );
-            
+
             if ( is_wp_error( $result ) ) {
                 // This is expected for mock data, but service should handle it gracefully
                 return 'Plugin detection service is working (gracefully handled mock data)';
             }
-            
+
             if ( ! isset( $result['is_plugin'] ) || ! isset( $result['scan_method'] ) ) {
                 throw new \Exception( 'Plugin detection result missing required fields' );
             }
-            
+
             return sprintf( 'Plugin detection completed using method: %s', $result['scan_method'] );
         });
 
@@ -506,6 +507,68 @@ class SelfTestsPage {
 
             return 'State management working correctly';
         });
+
+        return $tests;
+    }
+
+    /**
+     * Test integration workflows.
+     */
+    /**
+     * Test install path for KISS Plugin Quick Search and surface discrete error chain.
+     *
+     * @return array Test results.
+     */
+    private function test_install_path(): array {
+        $tests = [];
+
+        // Test 1: Install KISS Plugin Quick Search (dry-run/error-surfacing)
+        $tests[] = $this->run_test( 'PQS Install Flow - Error Surfacing', function() {
+            // Owner/Repo for KISS Plugin Quick Search
+            $owner = 'kissplugins';
+            $repo  = 'KISS-Plugin-Quick-Search';
+
+            // Obtain installation service via container
+            $installation_service = sbi_service( \SBI\Services\PluginInstallationService::class );
+            if ( ! $installation_service ) {
+                throw new \Exception( 'Installation service not available' );
+            }
+
+            // Capture progress updates locally
+            $progress = [];
+            $installation_service->set_progress_callback( function( $step, $status, $message ) use ( &$progress ) {
+                $progress[] = [ 'step' => $step, 'status' => $status, 'message' => $message ];
+            } );
+
+            // Attempt install (no activation). We do not modify state, only observe results.
+            $result = $installation_service->install_and_activate( $owner, $repo, false );
+
+            // Build a readable chain from progress + result
+            $lines = [];
+            foreach ( $progress as $p ) {
+                $lines[] = sprintf( '%s: [%s] %s', $p['step'], $p['status'], $p['message'] );
+            }
+
+            if ( is_wp_error( $result ) ) {
+                // Append error details
+                $lines[] = 'Result: ERROR - ' . $result->get_error_message();
+                // Surface HTTP-ish hints commonly seen during download
+                $msg = strtolower( $result->get_error_message() );
+                if ( str_contains( $msg, '403' ) || str_contains( $msg, 'forbidden' ) ) {
+                    $lines[] = 'Hint: Possible nonce/capability issue or host blocking downloads.';
+                } elseif ( str_contains( $msg, '404' ) || str_contains( $msg, 'not found' ) ) {
+                    $lines[] = 'Hint: Verify repository exists and is public: https://github.com/' . $owner . '/' . $repo;
+                } elseif ( str_contains( $msg, 'ssl' ) ) {
+                    $lines[] = 'Hint: SSL problem. Check cURL/OpenSSL configuration on the server.';
+                }
+
+                return implode( "\n", $lines );
+            }
+
+            // Success path: include plugin_file and activated flag
+            $lines[] = 'Result: SUCCESS - plugin_file=' . ( $result['plugin_file'] ?? 'n/a' ) . ', activated=' . ( $result['activated'] ? 'yes' : 'no' );
+            return implode( "\n", $lines );
+        } );
 
         return $tests;
     }

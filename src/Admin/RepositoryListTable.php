@@ -191,14 +191,28 @@ class RepositoryListTable extends WP_List_Table {
      */
     private function process_repository( array $repo ): array {
         $repo_name = $repo['full_name'];
-        
+
         // Get plugin detection result
         $detection_result = $this->detection_service->detect_plugin( $repo );
         $is_plugin = ! is_wp_error( $detection_result ) && $detection_result['is_plugin'];
-        
+
         // Get installation state
         $state = $this->state_manager->get_state( $repo_name );
-        
+
+        // IMPORTANT: Single Source of Truth Guard
+        // Do not remove the following normalization. It prevents mismatches where
+        // Plugin Status says "WordPress Plugin" but Installation State shows "Not Plugin".
+        // When a plugin is NOT installed, detection (is_plugin) is the source of truth.
+        // We only trust StateManager for installed states (active/inactive).
+        // This block intentionally keeps the UI consistent and guards regressions.
+        if ( !in_array( $state, [ \SBI\Enums\PluginState::INSTALLED_ACTIVE, \SBI\Enums\PluginState::INSTALLED_INACTIVE ], true ) ) {
+            if ( $is_plugin && $state === \SBI\Enums\PluginState::NOT_PLUGIN ) {
+                $state = \SBI\Enums\PluginState::AVAILABLE;
+            } elseif ( ! $is_plugin && $state === \SBI\Enums\PluginState::AVAILABLE ) {
+                $state = \SBI\Enums\PluginState::NOT_PLUGIN;
+            }
+        }
+
         return array_merge( $repo, [
             'is_plugin' => $is_plugin,
             'plugin_data' => $is_plugin ? $detection_result['plugin_data'] : [],

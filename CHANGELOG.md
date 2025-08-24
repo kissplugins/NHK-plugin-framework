@@ -5,6 +5,18 @@ All notable changes to the KISS Smart Batch Installer will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.13] - 2025-08-24
+
+### Fixed
+- False negative where Installation State showed Not Plugin while Plugin Status showed WordPress Plugin; normalized to single source of truth
+- Improved front-end AJAX failure diagnostics for Install action (HTTP code, response snippet)
+
+### Added
+- DO NOT REMOVE developer guard comments around critical debug logging and error reporting in install flow (PHP + JS)
+
+### Developer Notes
+- Kept verbose logging in PluginInstallationService and structured debug_steps in AjaxHandler; these aid field debugging and should be preserved
+
 ## [1.0.12] - 2025-08-24
 
 ### Fixed

@@ -489,6 +489,10 @@ class AjaxHandler {
             // Set progress callback for the installation service
             $this->installation_service->set_progress_callback( [ $this, 'send_progress_update' ] );
 
+            // NOTE TO FUTURE CONTRIBUTORS AND LLMs:
+            // The debug_steps/progress_updates and enhanced error mapping below are
+            // critical for field debugging. Do NOT remove or simplify. If you must
+            // refactor, preserve equivalent structured debug output.
             $result = $this->installation_service->install_and_activate( $owner, $repo_name, $activate );
 
             if ( is_wp_error( $result ) ) {

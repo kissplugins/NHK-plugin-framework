@@ -81,6 +81,10 @@ class PluginInstallationService {
      * @return array|WP_Error Installation result or error.
      */
     public function install_plugin( string $owner, string $repo, string $branch = 'main' ) {
+        // NOTE TO FUTURE CONTRIBUTORS AND LLMs:
+        // The debug logging in this method is intentionally verbose to diagnose
+        // a wide range of installation failures across hosts (network, SSL, HTTP, WP upgrader).
+        // Do NOT remove these logs. If you must change them, keep equivalently rich context.
         error_log( sprintf( 'SBI INSTALL SERVICE: Starting install_plugin for %s/%s (branch: %s)', $owner, $repo, $branch ) );
 
         if ( empty( $owner ) || empty( $repo ) ) {
