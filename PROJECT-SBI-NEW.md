@@ -1,9 +1,9 @@
 # KISS Smart Batch Installer - Production Ready WordPress Plugin
 
-**Version**: 1.0.0  
-**Status**: ✅ **PRODUCTION READY**  
-**Repository**: https://github.com/kissplugins/KISS-Smart-Batch-Installer  
-**Last Updated**: 2025-08-22
+**Version**: 1.0.16
+**Status**: ✅ **PRODUCTION READY**
+**Repository**: https://github.com/kissplugins/KISS-Smart-Batch-Installer
+**Last Updated**: 2025-08-24
 
 ## 🎯 Project Overview
 
@@ -35,7 +35,6 @@ The KISS Smart Batch Installer is a professional WordPress plugin that enables a
 - [x] **WordPress List Table**: Native-style plugin listing interface with sorting and pagination
 - [x] **AJAX API**: Modern REST-like endpoints for frontend interactions
 - [x] **Installation Service**: Install plugins using WordPress core upgrader
-- [] **Per Row Progressive Indicators**: Progressive loading each row as each plugin is checked
 
 ### Phase 3: User Interface (Week 3) ✅ COMPLETE
 - [x] **Plugin Installation Service**: WordPress core upgrader integration with GitHub ZIP downloads
@@ -48,12 +47,22 @@ The KISS Smart Batch Installer is a professional WordPress plugin that enables a
 - [x] **Bulk Operations**: Multi-select installation, activation, and deactivation with progress tracking
 - [x] **Progressive Loading**: Real-time repository scanning with individual row loading as each repository is processed
 
-### Phase 4: Polish & Production (Week 4) 🎯 CURRENT FOCUS
-- [ ] **Error Handling**: Graceful error states and user feedback
-- [ ] **Settings Integration**: Simple configuration interface
-- [ ] **Performance Optimization**: Lazy loading and intelligent caching
-- [ ] **Documentation**: User guide and developer documentation
-- [ ] **Testing**: Comprehensive testing across WordPress versions
+### Phase 4: Polish & Production (Week 4) ✅ COMPLETE
+- [x] **Error Handling**: Graceful error states and user feedback
+- [x] **Settings Integration**: Simple configuration interface
+- [x] **Performance Optimization**: Lazy loading and intelligent caching
+- [x] **Documentation**: User guide and developer documentation
+- [x] **Testing**: Comprehensive testing across WordPress versions
+
+### Phase 5: Architectural Refactor (Week 5) ✅ COMPLETE
+- [x] **Lightweight State Machine**: Validated transitions with allowed state map in StateManager
+- [x] **Event Logging**: Transient-backed per-repository event log for debugging and audit trails
+- [x] **FSM Integration**: State transitions wired into install/activate/deactivate/refresh flows
+- [x] **Self Tests for FSM**: Comprehensive tests for allowed/blocked transitions and event log structure
+- [x] **Debug Preservation**: "DO NOT REMOVE" guard comments around critical debug logging
+- [x] **Enhanced AJAX Diagnostics**: Improved error reporting with HTTP codes and response snippets
+- [x] **Single Source of Truth**: Fixed state mismatches between Plugin Status and Installation State
+- [x] **Always-Available Refresh**: Refresh button now renders for all repository rows regardless of state
 
 ---
 
@@ -65,7 +74,7 @@ The KISS Smart Batch Installer is a professional WordPress plugin that enables a
 - **`GitHubService`**: GitHub API integration with user/organization detection
 - **`PluginDetectionService`**: WordPress plugin header scanning and validation
 - **`PluginInstallationService`**: WordPress core upgrader integration
-- **`StateManager`**: Plugin installation status tracking with caching
+- **`StateManager`**: Plugin installation status tracking with caching and validated state machine
 - **`PQSIntegration`**: Plugin Quick Search integration for enhanced functionality
 
 #### Admin Interface
@@ -103,6 +112,15 @@ The KISS Smart Batch Installer is a professional WordPress plugin that enables a
 - ✅ Enhanced table layout with proper spacing and visual hierarchy
 - ✅ Progressive loading with real-time repository scanning and row-by-row display
 - ✅ Loading indicators and progress feedback for better user experience
+- ✅ Always-available Refresh button for all repository rows regardless of plugin state
+
+#### State Management & Debugging
+- ✅ Lightweight finite state machine with validated transitions
+- ✅ Per-repository event logging with transient-backed ring buffer (capped at 30 entries)
+- ✅ Enhanced AJAX error diagnostics with HTTP codes and response snippets
+- ✅ Single source of truth for plugin states to prevent UI inconsistencies
+- ✅ Comprehensive Self Tests for state transitions and event log validation
+- ✅ Protected debug logging with "DO NOT REMOVE" guard comments
 
 ---
 
@@ -168,6 +186,18 @@ The KISS Smart Batch Installer is a professional WordPress plugin that enables a
 - [x] Progress tracking with real-time feedback
 - [x] Comprehensive error handling and reporting
 - [x] Graceful handling of partial failures
+
+### FR-6: State Management & Debugging ✅ COMPLETE
+
+**Requirement**: Robust state management with comprehensive debugging capabilities
+
+**Acceptance Criteria**:
+- [x] Finite state machine with validated transitions between plugin states
+- [x] Event logging system for audit trails and debugging
+- [x] Enhanced error diagnostics with detailed failure information
+- [x] Single source of truth for plugin states to prevent UI inconsistencies
+- [x] Self-testing framework for state transitions and event logging
+- [x] Protected debug logging to prevent accidental removal during refactoring
 
 ---
 
@@ -261,11 +291,12 @@ kiss-smart-batch-installer/
 
 ## 📊 Project Metrics
 
-- **Total Development Time**: ~4 weeks
-- **Lines of Code**: ~2,500+ (excluding framework)
+- **Total Development Time**: ~5 weeks
+- **Lines of Code**: ~3,000+ (excluding framework)
 - **Files Created**: 15+ core files
-- **Features Implemented**: 25+ major features
-- **Test Coverage**: Manual testing across WordPress 6.0+
+- **Features Implemented**: 30+ major features
+- **Test Coverage**: Comprehensive Self Tests with FSM validation
 - **Performance**: <2s average response time for bulk operations
+- **Architecture**: Lightweight state machine with event logging
 
-**Status**: ✅ **PRODUCTION READY** - All core features implemented and tested
+**Status**: ✅ **PRODUCTION READY** - All core features implemented, tested, and architecturally refactored
