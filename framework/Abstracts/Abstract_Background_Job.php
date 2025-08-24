@@ -12,6 +12,7 @@
 namespace NHK\Framework\Abstracts;
 
 use NHK\Framework\Container\Container;
+use NHK\Framework\Core\FiniteStateMachine;
 
 /**
  * Abstract class for Background Jobs
@@ -39,11 +40,11 @@ abstract class Abstract_Background_Job {
     protected string $job_id;
     
     /**
-     * Job status
-     * 
-     * @var string
+     * State machine for job status transitions.
+     *
+     * @var FiniteStateMachine
      */
-    protected string $status = 'pending';
+    protected FiniteStateMachine $fsm;
     
     /**
      * Job progress (0-100)
@@ -75,12 +76,36 @@ abstract class Abstract_Background_Job {
     
     /**
      * Constructor
-     * 
-     * @param Container $container Service container
+     *
+     * @param Container           $container Service container
+     * @param FiniteStateMachine  $fsm       Finite state machine service
      */
-    public function __construct(Container $container) {
+    public function __construct(Container $container, FiniteStateMachine $fsm) {
         $this->container = $container;
+        $this->fsm       = $fsm;
+        $this->configure_fsm();
         $this->job_id = $this->generate_job_id();
+    }
+
+    /**
+     * Configure FSM with job states and transitions.
+     *
+     * @return void
+     */
+    protected function configure_fsm(): void {
+        $states = ['pending', 'scheduled', 'running', 'completed', 'failed', 'cancelled'];
+        $transitions = [
+            'pending'   => ['scheduled'],
+            'scheduled' => ['running', 'cancelled'],
+            'running'   => ['completed', 'failed'],
+            'failed'    => [],
+            'completed' => [],
+            'cancelled' => [],
+        ];
+
+        $this->fsm->set_states($states);
+        $this->fsm->set_transitions($transitions);
+        $this->fsm->set_initial_state('pending');
     }
     
     /**
@@ -129,8 +154,9 @@ abstract class Abstract_Background_Job {
         
         if ($result) {
             $this->log_message('Job scheduled: ' . $this->get_job_name());
+            $this->fsm->transition_to('scheduled');
             $this->save_job_data([
-                'status' => 'scheduled',
+                'status' => $this->fsm->get_state(),
                 'scheduled_time' => $timestamp,
                 'args' => $args,
             ]);
@@ -160,8 +186,9 @@ abstract class Abstract_Background_Job {
         
         if ($result) {
             $this->log_message('Recurring job scheduled: ' . $this->get_job_name());
+            $this->fsm->transition_to('scheduled');
             $this->save_job_data([
-                'status' => 'scheduled',
+                'status' => $this->fsm->get_state(),
                 'recurrence' => $recurrence,
                 'scheduled_time' => $timestamp,
                 'args' => $args,
@@ -185,8 +212,9 @@ abstract class Abstract_Background_Job {
             
             if ($result) {
                 $this->log_message('Job cancelled: ' . $this->get_job_name());
+                $this->fsm->transition_to('cancelled');
                 $this->save_job_data([
-                    'status' => 'cancelled',
+                    'status' => $this->fsm->get_state(),
                     'cancelled_time' => time(),
                 ]);
             }
@@ -207,13 +235,14 @@ abstract class Abstract_Background_Job {
      */
     public function run_job(array $args = []): void {
         $this->start_time = time();
-        $this->status = 'running';
-        $this->progress = 0;
-        $this->errors = [];
-        
+        $this->progress   = 0;
+        $this->errors     = [];
+
+        $this->fsm->transition_to('running');
+
         $this->log_message('Job started: ' . $this->get_job_name());
         $this->save_job_data([
-            'status' => 'running',
+            'status' => $this->fsm->get_state(),
             'start_time' => $this->start_time,
             'progress' => 0,
         ]);
@@ -222,18 +251,18 @@ abstract class Abstract_Background_Job {
             $success = $this->execute($args);
             
             $this->end_time = time();
-            $this->status = $success ? 'completed' : 'failed';
+            $this->fsm->transition_to($success ? 'completed' : 'failed');
             $this->progress = $success ? 100 : $this->progress;
-            
+
             $this->log_message(sprintf(
                 'Job %s: %s (Duration: %d seconds)',
-                $success ? 'completed' : 'failed',
+                $this->fsm->get_state(),
                 $this->get_job_name(),
                 $this->end_time - $this->start_time
             ));
-            
+
             $this->save_job_data([
-                'status' => $this->status,
+                'status' => $this->fsm->get_state(),
                 'end_time' => $this->end_time,
                 'progress' => $this->progress,
                 'duration' => $this->end_time - $this->start_time,
@@ -298,14 +327,14 @@ abstract class Abstract_Background_Job {
      * @return void
      */
     protected function handle_error(string $error_message): void {
-        $this->errors[] = $error_message;
-        $this->status = 'failed';
-        $this->end_time = time();
-        
+        $this->errors[]  = $error_message;
+        $this->end_time  = time();
+        $this->fsm->transition_to('failed');
+
         $this->log_message('Job error: ' . $error_message, 'error');
-        
+
         $this->save_job_data([
-            'status' => 'failed',
+            'status' => $this->fsm->get_state(),
             'end_time' => $this->end_time,
             'errors' => $this->errors,
         ]);
@@ -322,7 +351,7 @@ abstract class Abstract_Background_Job {
         return [
             'job_id' => $this->job_id,
             'job_name' => $this->get_job_name(),
-            'status' => $job_data['status'] ?? 'unknown',
+            'status' => $job_data['status'] ?? $this->fsm->get_state(),
             'progress' => $job_data['progress'] ?? 0,
             'start_time' => $job_data['start_time'] ?? null,
             'end_time' => $job_data['end_time'] ?? null,

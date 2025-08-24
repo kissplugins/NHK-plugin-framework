@@ -10,16 +10,16 @@ This checklist outlines the pragmatic, phased integration of a Finite State Mach
 
 **Goal:** Immediately improve debugging and user experience for all AJAX interactions.
 
-  * **1. Integrate `ajax-error-handler.js`:**
-      * Add the `ajax-error-handler.js` file to the `/assets/js/` directory.
-      * Create a new `AjaxErrorHandler` class instance in a core admin JavaScript file.
-      * Ensure it is enqueued and available in the admin area.
-  * **2. Refactor Existing AJAX Calls:**
-      * Update the AJAX calls in `src/Admin/SettingsPage.php` (for both the "Purge Event Cache" and "Run Health Checks" buttons) to use the new handler.
-      * Replace the basic `success`/`error` callbacks with the `ajaxHandler.makeRequest()` wrapper.
-      * Verify that the detailed error logging and user notifications are functioning correctly.
-  * **3. Update Frontend Shortcode AJAX:**
-      * Modify the `nhk-event-filter.js` script used by the `EventListShortcode` to leverage the new error handler for frontend event filtering, ensuring a consistent and robust experience for end-users.
+  * [x] **1. Integrate `ajax-error-handler.js`:**
+      * [x] Add the `ajax-error-handler.js` file to the `/assets/js/` directory.
+      * [x] Create a new `AjaxErrorHandler` class instance in a core admin JavaScript file.
+      * [x] Ensure it is enqueued and available in the admin area.
+  * [x] **2. Refactor Existing AJAX Calls:**
+      * [x] Update the AJAX calls in `src/Admin/SettingsPage.php` (for both the "Purge Event Cache" and "Run Health Checks" buttons) to use the new handler.
+      * [x] Replace the basic `success`/`error` callbacks with the `ajaxHandler.makeRequest()` wrapper.
+      * [x] Verify that the detailed error logging and user notifications are functioning correctly.
+  * [x] **3. Update Frontend Shortcode AJAX:**
+      * [x] Modify the `nhk-event-filter.js` script used by the `EventListShortcode` to leverage the new error handler for frontend event filtering, ensuring a consistent and robust experience for end-users.
 
 -----
 
@@ -27,13 +27,13 @@ This checklist outlines the pragmatic, phased integration of a Finite State Mach
 
 **Goal:** Formalize state management for a critical, self-contained component.
 
-  * **1. Create a Generic FSM Service:**
-      * Develop a basic `FiniteStateMachine` service/class within the framework. It should be able to define states, valid transitions, and trigger actions on state changes.
-  * **2. Integrate FSM into `Abstract_Background_Job`:**
-      * Inject the FSM service into `framework/Abstracts/Abstract_Background_Job.php`.
-      * Define the states: `pending`, `scheduled`, `running`, `completed`, `failed`, `cancelled`.
-      * Define the valid transitions (e.g., `scheduled` can go to `running` or `cancelled`, but not directly to `completed`).
-      * Replace direct manipulation of the `$status` property with FSM transition methods (e.g., `$this->fsm->transitionTo('running')`). This will throw an error if an invalid state change is attempted.
+  * [x] **1. Create a Generic FSM Service:**
+      * [x] Develop a basic `FiniteStateMachine` service/class within the framework. It should be able to define states, valid transitions, and trigger actions on state changes.
+  * [x] **2. Integrate FSM into `Abstract_Background_Job`:**
+      * [x] Inject the FSM service into `framework/Abstracts/Abstract_Background_Job.php`.
+      * [x] Define the states: `pending`, `scheduled`, `running`, `completed`, `failed`, `cancelled`.
+      * [x] Define the valid transitions (e.g., `scheduled` can go to `running` or `cancelled`, but not directly to `completed`).
+      * [x] Replace direct manipulation of the `$status` property with FSM transition methods (e.g., `$this->fsm->transitionTo('running')`). This will throw an error if an invalid state change is attempted.
 
 -----
 
