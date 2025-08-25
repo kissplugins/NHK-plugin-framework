@@ -65,8 +65,8 @@
         $(document).on('click', '.sbi-activate-plugin', SBI.activatePlugin);
         $(document).on('click', '.sbi-deactivate-plugin', SBI.deactivatePlugin);
 
-        // Refresh actions
-        $(document).on('click', '.sbi-refresh-repository', SBI.refreshRepository);
+        // Refresh actions (support both legacy and new selectors)
+        $(document).on('click', '.sbi-refresh-repository, .sbi-refresh-status', SBI.refreshRepository);
     };
 
     /**

@@ -47,9 +47,12 @@ class Plugin extends BasePlugin {
                 return new PluginInstallationService($container->get(GitHubService::class));
             });
 
-            // Register StateManager with PQSIntegration dependency
+            // Register StateManager with PQSIntegration + Detection dependency (FSM SSoT)
             $this->container->singleton(StateManager::class, function($container) {
-                return new StateManager($container->get(PQSIntegration::class));
+                return new StateManager(
+                    $container->get(PQSIntegration::class),
+                    $container->get(PluginDetectionService::class)
+                );
             });
 
             // Register admin services

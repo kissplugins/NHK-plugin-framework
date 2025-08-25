@@ -139,14 +139,17 @@ class StateManager {
      * @var PQSIntegration
      */
     protected PQSIntegration $pqs_integration;
+    protected PluginDetectionService $detection_service;
 
     /**
      * Constructor.
      *
      * @param PQSIntegration $pqs_integration PQS integration service.
+     * @param PluginDetectionService $detection_service Plugin detection service.
      */
-    public function __construct( PQSIntegration $pqs_integration ) {
+    public function __construct( PQSIntegration $pqs_integration, PluginDetectionService $detection_service ) {
         $this->pqs_integration = $pqs_integration;
+        $this->detection_service = $detection_service;
         $this->load_cached_states();
     }
 
@@ -234,8 +237,24 @@ class StateManager {
         $plugin_file = $this->find_plugin_file( $plugin_slug );
 
         if ( empty( $plugin_file ) ) {
-            // Plugin not installed, check if it's a valid WordPress plugin
-            return $this->is_wordpress_plugin( $repository ) ? PluginState::AVAILABLE : PluginState::NOT_PLUGIN;
+            // Plugin not installed. Use detection service (scan up to 3 root PHP files) to decide.
+            $repo = [ 'full_name' => $repository, 'name' => $plugin_slug ];
+            $det = $this->detection_service->detect_plugin( $repo );
+
+            if ( is_wp_error( $det ) ) {
+                return PluginState::UNKNOWN; // conservatively unknown on error
+            }
+
+            if ( ! empty( $det['is_plugin'] ) ) {
+                return PluginState::AVAILABLE;
+            }
+
+            // If detection explicitly failed to list or scan, stay conservative
+            if ( isset( $det['scan_method'] ) && in_array( $det['scan_method'], [ 'root_listing_failed', 'failed' ], true ) ) {
+                return PluginState::UNKNOWN;
+            }
+
+            return PluginState::NOT_PLUGIN;
         }
 
         // Plugin is installed, check if it's active
@@ -298,13 +317,27 @@ class StateManager {
         $pqs_cache = $this->pqs_integration->get_cache();
         $plugin_slug = $this->extract_plugin_slug( $repository );
 
-        // Check PQS cache for plugin information
+        // 1) Fast path: PQS cache knows about this slug
         if ( isset( $pqs_cache[ $plugin_slug ] ) ) {
             return true;
         }
 
-        // Fallback: assume it might be a plugin (will be verified by PluginDetectionService)
-        return false;
+        // 2) Authoritative detection path: scan up to 3 root PHP files for headers
+        // Build minimal repository structure for detection service
+        $repo = [
+            'full_name' => $repository,
+            'name' => $plugin_slug,
+        ];
+        try {
+            $det = $this->detection_service->detect_plugin( $repo );
+            if ( is_wp_error( $det ) ) {
+                return false;
+            }
+            return (bool) ( $det['is_plugin'] ?? false );
+        } catch ( \Throwable $e ) {
+            // Conservative default on failure
+            return false;
+        }
     }
 
     /**

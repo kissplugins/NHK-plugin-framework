@@ -165,24 +165,7 @@ class RepoRowManager {
     }
   }
 }
-Implementation Strategy
-Phase 1: Core Types & Interfaces
 
-Define TypeScript interfaces for your existing JavaScript objects
-Create type definitions for WordPress data structures
-Set up proper build pipeline with webpack/rollup
-
-Phase 2: Convert Critical Components
-
-Start with your FSM implementation
-Convert the WP detection system
-Migrate the AJAX error handler
-
-Phase 3: Full Migration
-
-Convert remaining JavaScript files
-Add strict type checking
-Implement comprehensive error boundaries
 
 Recommended TypeScript Setup
 json// tsconfig.json
@@ -252,16 +235,9 @@ Status: Phase 3 – In Progress
 - WordPress enqueue added for ES module bridge and index URL localization
 
 
-## Phase 2: Convert Critical Utilities
-- Create typed Ajax client wrappers for $.ajax/$.post or fetch
-- Implement typed error mapping utilities
-- Provide a thin FSM helper for client-side gating if needed
-- Keep DOM event handlers in JS for now; call into compiled TS helpers
 
-## Phase 3: Migrate UI Event Handlers
-- Port assets/admin.js handlers (install/activate/deactivate/refresh) to TS
-- Preserve debug panel logging; add typed definitions for progress/debug steps
-- Build single bundle (dist/admin.bundle.js) compatible with current enqueue
+
+
 
 ## Phase 4: Tighten Types and Guards
 - Enable stricter tsconfig options (e.g., noImplicitAny)

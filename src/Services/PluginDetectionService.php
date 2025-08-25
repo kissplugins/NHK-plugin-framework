@@ -127,41 +127,42 @@ class PluginDetectionService {
             'is_plugin' => false,
             'plugin_file' => '',
             'plugin_data' => [],
-            'scan_method' => '',
+            'scan_method' => 'root_header_scan',
             'error' => null,
         ];
 
-        // First try fast detection using raw.githubusercontent.com for common patterns
+        // Per specification: do NOT guess filenames. Scan up to 3 PHP files in repo root.
         try {
-            $fast_result = $this->fast_plugin_detection( $repository );
-            if ( $fast_result['is_plugin'] ) {
-                return $fast_result;
-            }
-        } catch ( Exception $e ) {
-            error_log( sprintf( 'SBI: Fast detection failed for %s: %s', $repository['full_name'], $e->getMessage() ) );
-        }
+            $root_php_files = $this->get_root_php_files( $repository );
 
-        // Fallback to comprehensive scan if fast detection fails
-        try {
-            $potential_files = $this->get_potential_plugin_files( $repository );
+            if ( ! empty( $root_php_files ) ) {
+                $files_to_scan = array_slice( $root_php_files, 0, 3 );
 
-            foreach ( $potential_files as $file_path ) {
-                $plugin_data = $this->scan_file_for_plugin_headers( $repository, $file_path );
+                foreach ( $files_to_scan as $file_path ) {
+                    $plugin_data = $this->scan_file_for_plugin_headers( $repository, $file_path );
 
-                if ( ! is_wp_error( $plugin_data ) && ! empty( $plugin_data ) ) {
-                    $result['is_plugin'] = true;
-                    $result['plugin_file'] = $file_path;
-                    $result['plugin_data'] = $plugin_data;
-                    $result['scan_method'] = 'header_scan';
-                    break;
+                    if ( ! is_wp_error( $plugin_data ) && ! empty( $plugin_data ) ) {
+                        $result['is_plugin'] = true;
+                        $result['plugin_file'] = $file_path;
+                        $result['plugin_data'] = $plugin_data;
+                        // scan_method already indicates root header scan
+                        return $result;
+                    }
                 }
+
+                // No headers found in the first few root PHP files
+                return $result;
+            } else {
+                // Could not list or no PHP files in root
+                $result['scan_method'] = 'no_root_php_files';
+                return $result;
             }
         } catch ( Exception $e ) {
-            error_log( sprintf( 'SBI: Comprehensive scan failed for %s: %s', $repository['full_name'], $e->getMessage() ) );
+            error_log( sprintf( 'SBI: Root scan failed for %s: %s', $repository['full_name'], $e->getMessage() ) );
             $result['error'] = $e->getMessage();
+            $result['scan_method'] = 'root_listing_failed';
+            return $result;
         }
-
-        return $result;
     }
 
     /**

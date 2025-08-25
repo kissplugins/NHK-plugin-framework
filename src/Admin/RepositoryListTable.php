@@ -47,6 +47,17 @@ class RepositoryListTable extends WP_List_Table {
     private string $organization = '';
 
     /**
+     * Helper: derive canonical plugin boolean from FSM state (SSoT).
+     */
+    private function is_plugin_from_state($state): bool {
+        return in_array(
+            $state,
+            [ PluginState::AVAILABLE, PluginState::INSTALLED_ACTIVE, PluginState::INSTALLED_INACTIVE ],
+            true
+        );
+    }
+
+    /**
      * Constructor.
      *
      * @param GitHubService           $github_service    GitHub service.
@@ -216,7 +227,8 @@ class RepositoryListTable extends WP_List_Table {
         $is_plugin_by_state = in_array( $state, [ PluginState::AVAILABLE, PluginState::INSTALLED_ACTIVE, PluginState::INSTALLED_INACTIVE ], true );
 
         return array_merge( $repo, [
-            'is_plugin' => $is_plugin_by_state,
+            // Canonical flag is derived from FSM state only
+            'is_plugin' => $this->is_plugin_from_state($state),
             'plugin_data' => $detected_is_plugin ? ( $detection_result['plugin_data'] ?? [] ) : [],
             'installation_state' => $state,
         ] );
@@ -247,8 +259,8 @@ class RepositoryListTable extends WP_List_Table {
      * @return string
      */
     public function column_cb( $item ): string {
-        // Only show checkbox for WordPress plugins
-        if ( ! $item['is_plugin'] ) {
+        // Only show checkbox for WordPress plugins (FSM SSoT)
+        if ( ! $this->is_plugin_from_state( $item['installation_state'] ) ) {
             return '';
         }
 
@@ -301,20 +313,31 @@ class RepositoryListTable extends WP_List_Table {
      * @return string
      */
     public function column_plugin_status( $item ): string {
-        if ( ! $item['is_plugin'] ) {
+        $state = $item['installation_state'];
+
+        // Render based on FSM state only (SSoT)
+        if ( in_array( $state, [ PluginState::UNKNOWN, PluginState::CHECKING ], true ) ) {
+            return '<span class="sbi-status-scanning"><span class="spinner is-active" style="float: none; margin: 0 5px 0 0;"></span>' . esc_html__( 'Scanning...', 'kiss-smart-batch-installer' ) . '</span>';
+        }
+
+        if ( $state === PluginState::NOT_PLUGIN ) {
             return '<span style="color: #999;">❌ ' . esc_html__( 'Not a WordPress Plugin', 'kiss-smart-batch-installer' ) . '</span>';
         }
-        
+
+        if ( ! $this->is_plugin_from_state( $state ) ) {
+            return '<span style="color: #999;">❓ ' . esc_html__( 'Unknown', 'kiss-smart-batch-installer' ) . '</span>';
+        }
+
         $plugin_name = $item['plugin_data']['Plugin Name'] ?? $item['name'];
         $version = $item['plugin_data']['Version'] ?? '';
-        
+
         $output = '<span style="color: #46b450;">✅ ' . esc_html__( 'WordPress Plugin', 'kiss-smart-batch-installer' ) . '</span>';
         $output .= '<br><strong>' . esc_html( $plugin_name ) . '</strong>';
-        
+
         if ( $version ) {
             $output .= '<br><small>v' . esc_html( $version ) . '</small>';
         }
-        
+
         return $output;
     }
 
@@ -352,7 +375,7 @@ class RepositoryListTable extends WP_List_Table {
     public function column_actions( $item ): string {
         $actions = [];
 
-        if ( ! $item['is_plugin'] ) {
+        if ( ! $this->is_plugin_from_state( $item['installation_state'] ) ) {
             // Not a plugin: show info text, but still render Refresh button
             $actions[] = '<span style="color: #999;">' . esc_html__( 'No actions available', 'kiss-smart-batch-installer' ) . '</span>';
         } else {

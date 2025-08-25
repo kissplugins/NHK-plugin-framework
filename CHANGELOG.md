@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.17] - 2025-08-25
 
+## [1.0.18] - 2025-08-25
+
+## [1.0.19] - 2025-08-25
+
+### Changed
+- Detection: removed filename-guessing path; now lists repo root and scans up to 3 PHP files for WP plugin headers (requires Plugin Name). This aligns with DRY policy and avoids brittle guesses.
+- FSM-first: StateManager now calls PluginDetectionService when plugin not installed, using detection results to decide AVAILABLE vs NOT_PLUGIN vs UNKNOWN.
+- UI: Plugin Status shows “Scanning…” for UNKNOWN/CHECKING instead of a red X, keeping columns consistent during detection.
+
+### Notes
+- Guardrails: left comments and conservative defaults in detection/state paths to prevent regressions. Override/whitelist deferred to a future build as requested.
+
+
+### Fixed
+- UI: ensured Refresh handler listens to both .sbi-refresh-repository and .sbi-refresh-status
+- Consistency: derive is_plugin strictly from FSM state in RepositoryListTable to eliminate mismatches
+
+
+
 ### Fixed
 - UI inconsistency where Plugin Status showed "WordPress Plugin" while Installation State showed "Not Plugin"; normalized rendering to use FSM (StateManager) as single source of truth
 - Repository row processing now derives is_plugin from FSM state; detection is metadata-only enrichment
