@@ -74,9 +74,9 @@ typescriptinterface AjaxErrorDetails {
 
 class EnhancedAjaxErrorHandler {
   async handle500Error(
-    response: Response, 
-    requestId: string, 
-    url: string, 
+    response: Response,
+    requestId: string,
+    url: string,
     options: RequestInit
   ): Promise<AjaxErrorDetails> {
     // TypeScript ensures you handle all properties correctly
@@ -89,12 +89,12 @@ class EnhancedAjaxErrorHandler {
       statusText: response.statusText || 'Internal Server Error',
       headers: {}
     };
-    
+
     // Type safety prevents runtime errors
     response.headers.forEach((value, key) => {
       errorDetails.headers[key] = value;
     });
-    
+
     return errorDetails;
   }
 }
@@ -131,7 +131,7 @@ class EventService {
       method: 'GET',
       body: JSON.stringify(params)
     });
-    
+
     return response.data as NHKEvent[];
   }
 }
@@ -146,18 +146,18 @@ typescriptinterface RepoRowState {
 
 class RepoRowManager {
   private rows = new Map<string, RepoRowState>();
-  
+
   updateRowState(id: string, newState: Partial<RepoRowState>): void {
     const current = this.rows.get(id) || this.createInitialState(id);
     this.rows.set(id, { ...current, ...newState });
-    
+
     // TypeScript ensures type safety in state updates
     this.notifyStateChange(id, current.wpDetectionState, newState.wpDetectionState);
   }
-  
+
   private notifyStateChange(
-    id: string, 
-    oldState?: EventState, 
+    id: string,
+    oldState?: EventState,
     newState?: EventState
   ): void {
     if (oldState !== newState && newState) {
@@ -218,5 +218,53 @@ Fewer runtime errors in production
 Faster debugging cycles
 More reliable state management
 Better maintainability as the project grows
+
+
+# Actionable Phased Checklist
+
+## Phase 0: Readiness and Minimal Build Scaffolding
+- Choose package manager (npm)
+- Add dev deps: typescript, @types/jquery, @wordpress/scripts (or preferred bundler)
+- Add tsconfig.json (ES2020, DOM, strict, noImplicitReturns, noFallthroughCasesInSwitch)
+- Add scripts: "build:ts", "watch:ts"; compile a placeholder src/ts/index.ts
+- Do not replace existing assets/admin.js yet
+
+## Phase 1: Core Types & Interfaces
+- Define PluginState enum in TS mirroring PHP PluginState values
+- Define interfaces for Ajax requests/responses (install/activate/deactivate/refresh)
+- Define interface for flattened repository row item
+- Create wp-globals.d.ts describing sbiAjax and optional window.sbiDebug
+
+## Phase 2: Convert Critical Utilities
+- Create typed Ajax client wrappers for $.ajax/$.post or fetch
+- Implement typed error mapping utilities
+- Provide a thin FSM helper for client-side gating if needed
+- Keep DOM event handlers in JS for now; call into compiled TS helpers
+
+## Phase 3: Migrate UI Event Handlers
+- Port assets/admin.js handlers (install/activate/deactivate/refresh) to TS
+- Preserve debug panel logging; add typed definitions for progress/debug steps
+- Build single bundle (dist/admin.bundle.js) compatible with current enqueue
+
+## Phase 4: Tighten Types and Guards
+- Enable stricter tsconfig options (e.g., noImplicitAny)
+- Make PluginState switches exhaustive
+- Parse data-attributes to typed structures with runtime guards for external data
+
+## Phase 5: Full Migration and CI
+- Convert remaining JS files to TS
+- Add CI step: tsc --noEmit as a pre-commit or pipeline check
+- Document build and usage in README and FRAMEWORK.md
+
+## Acceptance Criteria
+- Admin UI works as before (buttons, refresh, debug panel)
+- TypeScript bundle loads cleanly; fewer runtime errors
+- Self Tests remain green; FSM SSoT behavior preserved
+
+## Optional Enhancements
+- Source maps for better stack traces
+- Switch to fetch-based client with retry/timeout
+- Autogenerate endpoint types (OpenAPI or manual contracts)
+
 
 The combination of TypeScript + FSM would make your WP detection system much more reliable and your overall development experience significantly better.

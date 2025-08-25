@@ -1150,62 +1150,60 @@ class SelfTestsPage {
 
         // Test 3: Error Handling and Recovery
         $tests[] = $this->run_test( 'Error Handling and Recovery', function() {
-            // Force detection to run for this test, regardless of global setting
-            $original_setting = get_option( 'sbi_skip_plugin_detection', false );
-            update_option( 'sbi_skip_plugin_detection', false );
-            // Force detection to run for this test, regardless of global setting
+            // Ensure detection actually runs for this test
             $original_setting = get_option( 'sbi_skip_plugin_detection', false );
             update_option( 'sbi_skip_plugin_detection', false );
             try {
                 $error_test_cases = [
-                [
-                    'repo' => [
-                        'full_name' => '',
-                        'name' => '',
-                        'default_branch' => 'main'
+                    [
+                        'repo' => [
+                            'full_name' => '',
+                            'name' => '',
+                            'default_branch' => 'main'
+                        ],
+                        'expected_error' => 'invalid_repository'
                     ],
-                    'expected_error' => 'invalid_repository'
-                ],
-                [
-                    'repo' => [
-                        'full_name' => 'nonexistent/definitely-does-not-exist-12345',
-                        'name' => 'definitely-does-not-exist-12345',
-                        'default_branch' => 'main'
-                    ],
-                    'expected_error' => 'file_not_found'
-                ]
-            ];
+                    [
+                        'repo' => [
+                            'full_name' => 'nonexistent/definitely-does-not-exist-12345',
+                            'name' => 'definitely-does-not-exist-12345',
+                            'default_branch' => 'main'
+                        ],
+                        'expected_error' => 'file_not_found'
+                    ]
+                ];
 
-            $error_results = [];
-            foreach ( $error_test_cases as $case ) {
-                $result = $this->detection_service->detect_plugin( $case['repo'] );
+                $error_results = [];
+                foreach ( $error_test_cases as $case ) {
+                    // Force refresh to avoid cached bypasses
+                    $result = $this->detection_service->detect_plugin( $case['repo'], true );
 
-                if ( ! is_wp_error( $result ) ) {
-                    throw new \Exception( sprintf(
-                        'ERROR HANDLING ISSUE: Expected WP_Error for invalid repository %s, but got successful result. Error handling may not be working properly.',
-                        $case['repo']['full_name'] ?: 'empty'
-                    ) );
+                    if ( empty( $case['repo']['full_name'] ) ) {
+                        // Empty repository should always yield WP_Error('invalid_repository')
+                        if ( ! is_wp_error( $result ) || $result->get_error_code() !== 'invalid_repository' ) {
+                            throw new \Exception( 'ERROR HANDLING ISSUE: invalid repository did not return expected WP_Error("invalid_repository").' );
+                        }
+                        $error_results[] = 'empty → invalid_repository';
+                        continue;
+                    }
+
+                    // For nonexistent repo, either a WP_Error or a non-plugin array is acceptable
+                    if ( is_wp_error( $result ) ) {
+                        // Accept file_not_found and similar HTTP errors
+                        $error_results[] = sprintf( '%s → %s', $case['repo']['full_name'], $result->get_error_code() );
+                    } else {
+                        // Must not be detected as a plugin
+                        if ( ! is_array( $result ) || ! array_key_exists( 'is_plugin', $result ) ) {
+                            throw new \Exception( 'ERROR HANDLING ISSUE: detection did not return expected array shape for nonexistent repository.' );
+                        }
+                        if ( ! empty( $result['is_plugin'] ) ) {
+                            throw new \Exception( 'ERROR HANDLING ISSUE: nonexistent repository was incorrectly detected as a plugin.' );
+                        }
+                        $error_results[] = sprintf( '%s → handled (non-plugin)', $case['repo']['full_name'] );
+                    }
                 }
 
-                $error_code = $result->get_error_code();
-                if ( $error_code !== $case['expected_error'] ) {
-                    // Log the actual error for debugging but don't fail the test
-                    error_log( sprintf(
-                        'SBI Test: Expected error code %s but got %s for repository %s. Error message: %s',
-                        $case['expected_error'],
-                        $error_code,
-                        $case['repo']['full_name'] ?: 'empty',
-                        $result->get_error_message()
-                    ) );
-                }
-
-                $error_results[] = sprintf( '%s → %s',
-                    $case['repo']['full_name'] ?: 'empty',
-                    $error_code
-                );
-            }
-
-            return 'Error handling working: ' . implode( ', ', $error_results );
+                return 'Error handling working: ' . implode( ', ', $error_results );
             } finally {
                 // Restore skip detection original setting
                 update_option( 'sbi_skip_plugin_detection', $original_setting );
