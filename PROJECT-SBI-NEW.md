@@ -1,6 +1,6 @@
 # KISS Smart Batch Installer - Production Ready WordPress Plugin
 
-**Version**: 1.0.16
+**Version**: 1.0.17
 **Status**: ✅ **PRODUCTION READY**
 **Repository**: https://github.com/kissplugins/KISS-Smart-Batch-Installer
 **Last Updated**: 2025-08-24

@@ -123,20 +123,23 @@ class AjaxHandler {
             ] );
         }
         
-        // Process repositories with plugin detection
+        // Process repositories with detection enrichment; FSM is Single Source of Truth (SSoT)
         $processed_repos = [];
         foreach ( $repositories as $repo ) {
             $detection_result = $this->detection_service->detect_plugin( $repo );
             $state = $this->state_manager->get_state( $repo['full_name'] );
-            
+
+            // Derive canonical plugin flag from FSM state only
+            $is_plugin_ssot = in_array( $state, [ PluginState::AVAILABLE, PluginState::INSTALLED_INACTIVE, PluginState::INSTALLED_ACTIVE ], true );
+
             $processed_repos[] = [
                 'repository' => $repo,
-                'is_plugin' => ! is_wp_error( $detection_result ) && $detection_result['is_plugin'],
-                'plugin_data' => ! is_wp_error( $detection_result ) ? $detection_result['plugin_data'] : [],
+                'is_plugin' => $is_plugin_ssot,
+                'plugin_data' => ! is_wp_error( $detection_result ) ? ( $detection_result['plugin_data'] ?? [] ) : [],
                 'state' => $state->value,
             ];
         }
-        
+
         wp_send_json_success( [
             'repositories' => $processed_repos,
             'total' => count( $processed_repos ),
@@ -229,48 +232,41 @@ class AjaxHandler {
             $detection_result = $this->detection_service->detect_plugin( $repo );
             $is_plugin = ! is_wp_error( $detection_result ) && $detection_result['is_plugin'];
 
-            // Determine the correct state based on detection result and installation status
-            if ( is_wp_error( $detection_result ) ) {
-                $state = \SBI\Enums\PluginState::ERROR;
-                error_log( sprintf( 'SBI: Repository %s has error state: %s', $repo['full_name'], $detection_result->get_error_message() ) );
-            } elseif ( ! $is_plugin ) {
-                $state = \SBI\Enums\PluginState::NOT_PLUGIN;
-                error_log( sprintf( 'SBI: Repository %s is not a WordPress plugin', $repo['full_name'] ) );
-            } else {
-                // It's a WordPress plugin, check if it's installed
-                $plugin_slug = basename( $repo['full_name'] );
+            // FSM-first: refresh and read canonical state
+            $this->state_manager->refresh_state( $repo['full_name'] );
+            $state = $this->state_manager->get_state( $repo['full_name'] );
 
-                // Look for the plugin file in the detection result first
-                $detected_plugin_file = ! is_wp_error( $detection_result ) ? ($detection_result['plugin_file'] ?? '') : '';
+            // Compute plugin file information
+            $plugin_slug = basename( $repo['full_name'] );
+            $detected_plugin_file = ! is_wp_error( $detection_result ) ? ( $detection_result['plugin_file'] ?? '' ) : '';
+            $installed_plugin_file = $this->find_installed_plugin( $plugin_slug );
 
-                // Find installed plugin
-                $installed_plugin_file = $this->find_installed_plugin( $plugin_slug );
-
-                if ( ! empty( $installed_plugin_file ) ) {
-                    // Plugin is installed
-                    if ( is_plugin_active( $installed_plugin_file ) ) {
-                        $state = \SBI\Enums\PluginState::INSTALLED_ACTIVE;
-                        error_log( sprintf( 'SBI: Plugin %s is installed and active', $repo['full_name'] ) );
-                    } else {
-                        $state = \SBI\Enums\PluginState::INSTALLED_INACTIVE;
-                        error_log( sprintf( 'SBI: Plugin %s is installed but inactive', $repo['full_name'] ) );
-                    }
-                    $plugin_file = $installed_plugin_file;
+            if ( ! empty( $installed_plugin_file ) ) {
+                // Installed: align state with runtime activation to be extra safe
+                if ( is_plugin_active( $installed_plugin_file ) ) {
+                    $state = PluginState::INSTALLED_ACTIVE;
                 } else {
-                    // Plugin is not installed - mark as available for installation
-                    $state = \SBI\Enums\PluginState::AVAILABLE;
-                    $plugin_file = $detected_plugin_file; // Use the detected plugin file path
-                    error_log( sprintf( 'SBI: Plugin %s is available for installation (detected file: %s)', $repo['full_name'], $plugin_file ) );
+                    $state = PluginState::INSTALLED_INACTIVE;
                 }
+                $plugin_file = $installed_plugin_file;
+            } else {
+                // Not installed: SAFEGUARD — if detection says plugin but FSM says NOT_PLUGIN, treat as AVAILABLE
+                if ( ! is_wp_error( $detection_result ) && ( $detection_result['is_plugin'] ?? false ) && $state === PluginState::NOT_PLUGIN ) {
+                    $state = PluginState::AVAILABLE;
+                }
+                $plugin_file = $detected_plugin_file;
             }
+
+            // Derive is_plugin from FSM state (SSoT)
+            $is_plugin_ssot = in_array( $state, [ PluginState::AVAILABLE, PluginState::INSTALLED_INACTIVE, PluginState::INSTALLED_ACTIVE ], true );
 
             $processed_repo = [
                 'repository' => $repo,
-                'is_plugin' => $is_plugin,
-                'plugin_data' => ! is_wp_error( $detection_result ) ? $detection_result['plugin_data'] : [],
+                'is_plugin' => $is_plugin_ssot,
+                'plugin_data' => ! is_wp_error( $detection_result ) ? ( $detection_result['plugin_data'] ?? [] ) : [],
                 'plugin_file' => $plugin_file ?? '',  // Make sure plugin_file is always set
                 'state' => $state->value,
-                'scan_method' => ! is_wp_error( $detection_result ) ? $detection_result['scan_method'] : '',
+                'scan_method' => ! is_wp_error( $detection_result ) ? ( $detection_result['scan_method'] ?? '' ) : '',
                 'error' => is_wp_error( $detection_result ) ? $detection_result->get_error_message() : null,
             ];
 

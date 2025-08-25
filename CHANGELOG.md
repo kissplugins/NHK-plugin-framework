@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.16] - 2025-08-24
 
+## [1.0.17] - 2025-08-25
+
+### Fixed
+- UI inconsistency where Plugin Status showed "WordPress Plugin" while Installation State showed "Not Plugin"; normalized rendering to use FSM (StateManager) as single source of truth
+- Repository row processing now derives is_plugin from FSM state; detection is metadata-only enrichment
+
+### Added
+- Self Tests: added SSoT Consistency test to ensure Plugin Status aligns with FSM-derived is_plugin
+
+- Safeguards and comments in RepositoryListTable and AjaxHandler explaining SSoT decision and conservative normalization rules
+
+
 ### Added
 - FSM Self Tests: validate allowed/blocked transitions and verify event log structure
 

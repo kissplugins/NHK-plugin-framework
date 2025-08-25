@@ -963,6 +963,75 @@ class SelfTestsPage {
             return 'All button rendering tests passed: ' . implode( ', ', $results );
         });
 
+        // Test: SSoT Consistency (FSM vs Plugin Status)
+        $tests[] = $this->run_test( 'SSoT Consistency (FSM vs Plugin Status)', function() {
+            // Minimal mock repository data
+            $repo_data = [
+                'id' => 1,
+                'name' => 'mock-repo',
+                'full_name' => 'owner/mock-repo',
+                'description' => '',
+                'html_url' => 'https://github.com/owner/mock-repo',
+                'updated_at' => date('c'),
+                'language' => 'PHP',
+            ];
+
+            $cases = [
+                [ 'state' => \SBI\Enums\PluginState::NOT_PLUGIN, 'expect_status' => 'Not a WordPress Plugin', 'expect_state' => 'Not Plugin' ],
+                [ 'state' => \SBI\Enums\PluginState::AVAILABLE, 'expect_status' => 'WordPress Plugin', 'expect_state' => 'Available' ],
+            ];
+
+            $list_table = new \SBI\Admin\RepositoryListTable(
+                $this->github_service,
+                $this->detection_service,
+                $this->state_manager
+            );
+
+            $results = [];
+
+            foreach ( $cases as $case ) {
+                $state = $case['state'];
+                // Derive is_plugin from FSM state (Single Source of Truth)
+                $is_plugin_by_state = in_array( $state, [
+                    \SBI\Enums\PluginState::AVAILABLE,
+                    \SBI\Enums\PluginState::INSTALLED_ACTIVE,
+                    \SBI\Enums\PluginState::INSTALLED_INACTIVE,
+                ], true );
+
+                $flattened = array_merge( $repo_data, [
+                    'is_plugin' => $is_plugin_by_state,
+                    'plugin_data' => [],
+                    'plugin_file' => '',
+                    'installation_state' => $state,
+                ] );
+
+                $status_html = $list_table->column_plugin_status( $flattened );
+                $state_html = $list_table->column_state( $flattened );
+
+                if ( strpos( $status_html, $case['expect_status'] ) === false ) {
+                    throw new \Exception( sprintf(
+                        'SSoT mismatch: expected Plugin Status "%s" for state %s. Got HTML: %s',
+                        $case['expect_status'],
+                        $state->value,
+                        $status_html
+                    ) );
+                }
+
+                if ( strpos( $state_html, $case['expect_state'] ) === false ) {
+                    throw new \Exception( sprintf(
+                        'SSoT mismatch: expected Installation State "%s". Got HTML: %s',
+                        $case['expect_state'],
+                        $state_html
+                    ) );
+                }
+
+                $results[] = $state->value . ' -> OK';
+            }
+
+            return 'SSoT consistency validated: ' . implode( ', ', $results );
+        });
+
+
         return $tests;
     }
 

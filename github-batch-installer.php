@@ -3,7 +3,7 @@
  * Plugin Name: KISS Smart Batch Installer
  * Plugin URI: https://github.com/sbi/kiss-smart-batch-installer
  * Description: KISS (Keep It Simple, Stupid) batch installer for WordPress plugins from GitHub repositories with smart detection and PQS integration.
- * Version: 1.0.16
+ * Version: 1.0.17
  * Author: SBI Development Team
  * Author URI: https://sbi.local
  * License: GPL v2 or later
@@ -20,7 +20,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // Plugin constants
-define( 'GBI_VERSION', '1.0.16' );
+define( 'GBI_VERSION', '1.0.17' );
 define( 'GBI_FILE', __FILE__ );
 define( 'GBI_PATH', __DIR__ . '/' );
 
