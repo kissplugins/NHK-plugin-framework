@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Self Tests: added SSoT Consistency test to ensure Plugin Status aligns with FSM-derived is_plugin
 
+- Phase 0 TypeScript scaffold: added tsconfig.json, src/ts/index.ts, and npm scripts (build:ts, watch:ts)
+
 - Safeguards and comments in RepositoryListTable and AjaxHandler explaining SSoT decision and conservative normalization rules
 
 
