@@ -1,10 +1,11 @@
 /*
  Minimal TypeScript scaffold for KISS Smart Batch Installer
- Phase 2: Add typed AJAX client utilities; keep current JS intact
+ Phase 3: Add typed admin handlers; keep current JS intact
 */
 export { PluginState, isInstalled, isPluginByState } from './types/fsm';
 export { wpAjaxFetch } from './lib/ajaxClient';
 export { mapResponseToError, mapExceptionToError } from './lib/errors';
+export { installPlugin, activatePlugin, deactivatePlugin, refreshStatus } from './admin/handlers';
 // Smoke test to ensure bundling works when later integrated
 export function tsScaffoldHello() {
     const hasAjax = typeof window !== 'undefined' && !!window.sbiAjax;
