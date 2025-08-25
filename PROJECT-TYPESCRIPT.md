@@ -235,6 +235,23 @@ Better maintainability as the project grows
 - Define interface for flattened repository row item
 - Create wp-globals.d.ts describing sbiAjax and optional window.sbiDebug
 
+Status: Phase 0 – Completed
+- tsconfig.json added
+- package.json scripts (build:ts, watch:ts) added
+- src/ts/index.ts scaffold created
+
+Status: Phase 1 – Completed
+- Shared types/interfaces added under src/ts/types
+
+Status: Phase 2 – Completed
+- Typed AJAX client and error utilities implemented under src/ts/lib
+
+Status: Phase 3 – In Progress
+- TS admin handlers added (install/activate/deactivate/refresh)
+- Install button flow in assets/admin.js now prefers TS handler via SBIts bridge, with safe jQuery fallback
+- WordPress enqueue added for ES module bridge and index URL localization
+
+
 ## Phase 2: Convert Critical Utilities
 - Create typed Ajax client wrappers for $.ajax/$.post or fetch
 - Implement typed error mapping utilities

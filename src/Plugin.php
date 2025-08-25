@@ -193,6 +193,26 @@ class Plugin extends BasePlugin {
                 'success' => __( 'Success', 'kiss-smart-batch-installer' ),
             ]
         ] );
+
+        // Enqueue TS bridge (module) to expose typed handlers to classic admin.js
+        $ts_index_url = $this->plugin_url . 'dist/ts/index.js';
+        wp_register_script(
+            'sbi-ts-bridge',
+            $this->plugin_url . 'assets/sbi-ts-bridge.js',
+            [],
+            $this->version,
+            true
+        );
+        // Mark as ES module
+        if ( function_exists( 'wp_script_add_data' ) ) {
+            wp_script_add_data( 'sbi-ts-bridge', 'type', 'module' );
+        }
+        // Pass module index URL to the bridge; bridge will no-op if URL not found
+        wp_localize_script( 'sbi-ts-bridge', 'sbiTs', [
+            'indexUrl' => $ts_index_url,
+        ] );
+        wp_enqueue_script( 'sbi-ts-bridge' );
+
     }
 
     /**
