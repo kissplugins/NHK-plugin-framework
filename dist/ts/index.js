@@ -1,17 +1,8 @@
 /*
  Minimal TypeScript scaffold for KISS Smart Batch Installer
- Phase 0: Do not replace existing assets/admin.js yet
+ Phase 1: Add shared types and keep current JS intact
 */
-export var PluginState;
-(function (PluginState) {
-    PluginState["UNKNOWN"] = "unknown";
-    PluginState["CHECKING"] = "checking";
-    PluginState["AVAILABLE"] = "available";
-    PluginState["NOT_PLUGIN"] = "not_plugin";
-    PluginState["INSTALLED_INACTIVE"] = "installed_inactive";
-    PluginState["INSTALLED_ACTIVE"] = "installed_active";
-    PluginState["ERROR"] = "error";
-})(PluginState || (PluginState = {}));
+export { PluginState, isInstalled, isPluginByState } from './types/fsm';
 // Smoke test to ensure bundling works when later integrated
 export function tsScaffoldHello() {
     const hasAjax = typeof window !== 'undefined' && !!window.sbiAjax;

@@ -1,32 +1,11 @@
 /*
  Minimal TypeScript scaffold for KISS Smart Batch Installer
- Phase 0: Do not replace existing assets/admin.js yet
+ Phase 1: Add shared types and keep current JS intact
 */
 
-export enum PluginState {
-  UNKNOWN = 'unknown',
-  CHECKING = 'checking',
-  AVAILABLE = 'available',
-  NOT_PLUGIN = 'not_plugin',
-  INSTALLED_INACTIVE = 'installed_inactive',
-  INSTALLED_ACTIVE = 'installed_active',
-  ERROR = 'error',
-}
-
-export interface SbiAjax {
-  ajaxurl: string;
-  nonce: string;
-  strings: Record<string, string>;
-}
-
-declare global {
-  interface Window {
-    sbiDebug?: {
-      addEntry: (level: 'info' | 'success' | 'warning' | 'error', title: string, message: string) => void;
-    };
-    sbiAjax?: SbiAjax;
-  }
-}
+export { PluginState, isInstalled, isPluginByState } from './types/fsm';
+export type { WpAjaxResponse, WpAjaxSuccess, WpAjaxError, ProgressUpdate } from './types/ajax';
+export type { SbiAjax, SbiDebug } from './types/wp-globals';
 
 // Smoke test to ensure bundling works when later integrated
 export function tsScaffoldHello(): string {
