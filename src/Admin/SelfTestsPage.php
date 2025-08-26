@@ -764,6 +764,31 @@ class SelfTestsPage {
         });
 
         return $tests;
+
+        // Test 4: Server broadcast queue receives transition
+        $tests[] = $this->run_test('Broadcast Queue – transition appears', function() {
+            $repo = 'kissplugins/Broadcast-Check';
+            $original = $this->state_manager->get_state($repo);
+            $last_id = (int) get_option('sbi_broadcast_last_id', 0);
+            // Force a quick transition to trigger broadcast
+            $this->state_manager->transition($repo, \SBI\Services\PluginState::CHECKING, [ 'source' => 'self_test' ]);
+            $events = $this->state_manager->get_broadcast_events_since($last_id);
+            // Restore
+            $this->state_manager->transition($repo, $original, [ 'source' => 'self_test_restore' ]);
+
+            if (!is_array($events) || count($events) === 0) {
+                throw new \Exception('Expected at least one broadcast event after transition');
+            }
+            $found = false;
+            foreach ($events as $evt) {
+                if (($evt['event'] ?? '') === 'state_changed' && ($evt['payload']['repository'] ?? '') === $repo) {
+                    $found = true; break;
+                }
+            }
+            if (!$found) { throw new \Exception('No state_changed event for target repo in broadcast queue'); }
+            return 'Broadcast event emitted and visible via get_broadcast_events_since';
+        });
+
     }
 
         });

@@ -190,6 +190,7 @@ class Plugin extends BasePlugin {
         wp_localize_script( 'sbi-admin', 'sbiAjax', [
             'ajaxurl' => admin_url( 'admin-ajax.php' ),
             'nonce' => wp_create_nonce( 'sbi_ajax_nonce' ),
+            'sseEnabled' => (bool) get_option( 'sbi_sse_diagnostics', false ),
             'strings' => [
                 'loading' => __( 'Loading...', 'kiss-smart-batch-installer' ),
                 'error' => __( 'An error occurred', 'kiss-smart-batch-installer' ),

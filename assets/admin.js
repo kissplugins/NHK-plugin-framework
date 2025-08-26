@@ -62,6 +62,27 @@
 
         // Repository actions
         $(document).on('click', '.sbi-install-plugin', SBI.installPlugin);
+    // Optional: start SSE diagnostics stream if enabled
+    try {
+        if (typeof sbiAjax !== 'undefined' && sbiAjax.sseEnabled) {
+            var sseUrl = sbiAjax.ajaxurl + '?action=sbi_state_stream';
+            var es = new EventSource(sseUrl);
+            es.addEventListener('open', function(){ try { SBI.debug && SBI.debug('SSE stream opened'); } catch(_){} });
+            es.addEventListener('error', function(){ try { SBI.debug && SBI.debug('SSE stream error'); } catch(_){} });
+            es.addEventListener('state_changed', function(e){
+                try {
+                    var payload = JSON.parse(e.data || '{}');
+                    var repo = payload.repository;
+                    var to = payload.to;
+                    if (repo && to && window.SBIts && window.SBIts.repositoryFSM) {
+                        window.SBIts.repositoryFSM.set(repo, to);
+                        window.SBIts.repositoryFSM.applyToRow(repo, to);
+                    }
+                } catch(err){ /* ignore */ }
+            });
+        }
+    } catch(_){}
+
         $(document).on('click', '.sbi-activate-plugin', SBI.activatePlugin);
         $(document).on('click', '.sbi-deactivate-plugin', SBI.deactivatePlugin);
 
