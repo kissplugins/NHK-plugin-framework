@@ -158,7 +158,12 @@
                                 }
                                 SBI.showMessage('Plugin installed successfully', 'success');
                                 $button.text('Installed').removeClass('sbi-install-plugin').removeClass('button-primary').addClass('button-secondary');
-                                // Refresh only this repository row (no full page reload)
+                                // Frontend FSM immediate feedback
+                                try { if (window.SBIts && window.SBIts.repositoryFSM) {
+                                    window.SBIts.repositoryFSM.set(repository, 'installed_inactive');
+                                    window.SBIts.repositoryFSM.applyToRow(repository, 'installed_inactive');
+                                } } catch(_){}
+                                // Refresh only this repository row for authoritative server state
                                 SBI.refreshRow(repository, $button);
                             } else {
                                 if (window.sbiDebug) {
@@ -284,7 +289,12 @@
 
                 SBI.showMessage('Plugin installed successfully', 'success');
                 $button.text('Installed').removeClass('sbi-install-plugin').removeClass('button-primary').addClass('button-secondary');
-                // Refresh only this repository row (no full page reload)
+                // Frontend FSM immediate feedback
+                try { if (window.SBIts && window.SBIts.repositoryFSM) {
+                    window.SBIts.repositoryFSM.set(repository, 'installed_inactive');
+                    window.SBIts.repositoryFSM.applyToRow(repository, 'installed_inactive');
+                } } catch(_){}
+                // Refresh only this repository row (server is authoritative)
                 SBI.refreshRow(repository, $button);
             } else {
                 if (window.sbiDebug) {
@@ -415,7 +425,12 @@
             if (response.success) {
                 SBI.showMessage('Plugin activated successfully', 'success');
                 $button.text('Activated').removeClass('sbi-activate-plugin');
-                // Refresh only this repository row (no full page reload)
+                // Frontend FSM immediate feedback
+                try { if (window.SBIts && window.SBIts.repositoryFSM) {
+                    window.SBIts.repositoryFSM.set(repository, 'installed_active');
+                    window.SBIts.repositoryFSM.applyToRow(repository, 'installed_active');
+                } } catch(_){}
+                // Refresh only this repository row (server is authoritative)
                 SBI.refreshRow(repository, $button);
             } else {
                 SBI.showMessage(response.data.message || 'Activation failed', 'error');
@@ -455,7 +470,12 @@
             if (response.success) {
                 SBI.showMessage('Plugin deactivated successfully', 'success');
                 $button.text('Deactivated').removeClass('sbi-deactivate-plugin');
-                // Refresh only this repository row (no full page reload)
+                // Frontend FSM immediate feedback
+                try { if (window.SBIts && window.SBIts.repositoryFSM) {
+                    window.SBIts.repositoryFSM.set(repository, 'installed_inactive');
+                    window.SBIts.repositoryFSM.applyToRow(repository, 'installed_inactive');
+                } } catch(_){}
+                // Refresh only this repository row (server is authoritative)
                 SBI.refreshRow(repository, $button);
             } else {
                 SBI.showMessage(response.data.message || 'Deactivation failed', 'error');

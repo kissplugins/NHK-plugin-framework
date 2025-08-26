@@ -97,6 +97,10 @@ class AjaxHandler {
         // Status actions
         add_action( 'wp_ajax_sbi_refresh_status', [ $this, 'refresh_status' ] );
         add_action( 'wp_ajax_sbi_get_installation_progress', [ $this, 'get_installation_progress' ] );
+
+        // Experimental SSE stream for state changes (admin-only)
+        add_action( 'wp_ajax_sbi_state_stream', [ $this, 'state_stream' ] );
+
         // UI tips
         add_action( 'wp_ajax_sbi_dismiss_webonly_tip', [ $this, 'dismiss_webonly_tip' ] );
     }
@@ -1021,6 +1025,52 @@ class AjaxHandler {
         $this->verify_nonce_and_capability();
 
         // TODO: Implement actual progress tracking
+
+    /**
+     * Server-Sent Events stream for state broadcasts (experimental).
+     * This returns text/event-stream with incremental state_changed events.
+     * Note: Do not enable for unauthenticated users without review.
+     */
+    public function state_stream(): void {
+        // Basic permission check; can be relaxed later as needed
+        if ( ! current_user_can( 'install_plugins' ) ) {
+            status_header(403);
+            exit;
+        }
+
+        // Headers
+        header('Content-Type: text/event-stream');
+        header('Cache-Control: no-cache');
+        header('X-Accel-Buffering: no'); // for Nginx
+
+        @set_time_limit(0);
+        @ignore_user_abort(true);
+
+        $last_id = isset($_GET['last_id']) ? intval($_GET['last_id']) : 0;
+        $start = time();
+        $max_seconds = 25; // keep short; client should reconnect
+
+        // Send initial comment to open the stream
+        echo ":ok\n\n";
+        @flush();
+
+        while ( ( time() - $start ) < $max_seconds ) {
+            $events = $this->state_manager->get_broadcast_events_since($last_id);
+            foreach ($events as $evt) {
+                $last_id = (int) $evt['id'];
+                echo 'id: ' . $last_id . "\n";
+                echo 'event: ' . $evt['event'] . "\n";
+                echo 'data: ' . wp_json_encode($evt['payload']) . "\n\n";
+                @flush();
+            }
+            // Sleep briefly to avoid tight loop
+            usleep(300000); // 300ms
+            if ( connection_aborted() ) { break; }
+        }
+        // end of stream cycle; client reconnects automatically
+        exit;
+    }
+
         // For now, return mock progress data
 
         wp_send_json_success( [

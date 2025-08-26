@@ -168,13 +168,46 @@ class StateManager {
     }
 
     /**
-     * Broadcast a state-related event to listeners (stub).
-     * This is a placeholder for SSE integration; currently logs to event buffer only.
+     * Broadcast a state-related event to listeners (stub + queue).
+     * - Logs to per-repo event buffer
+     * - Appends to a global broadcast ring buffer for SSE consumers
      */
     public function broadcast(string $event, array $payload = []): void {
-        // For now, just persist to the event log. SSE endpoint will read from here or a queue.
         $repo = $payload['repository'] ?? 'unknown';
         $this->log_event($repo, $event, $payload);
+
+        // Append to global broadcast queue (ring buffer)
+        $last_id = (int) get_option('sbi_broadcast_last_id', 0);
+        $id = $last_id + 1;
+        update_option('sbi_broadcast_last_id', $id, false);
+
+        $queue = get_transient('sbi_broadcast_events');
+        if (!is_array($queue)) { $queue = []; }
+        $queue[] = [
+            'id' => $id,
+            'event' => $event,
+            'payload' => $payload,
+            'ts' => time(),
+        ];
+        // Cap at 100 events
+        if (count($queue) > 100) {
+            $queue = array_slice($queue, -100);
+        }
+        set_transient('sbi_broadcast_events', $queue, self::EVENT_LOG_TTL);
+    }
+
+    /**
+     * Get broadcast events with id greater than $last_id
+     * for use by SSE endpoint.
+     *
+     * @return array<int, array{ id:int, event:string, payload:array, ts:int }>
+     */
+    public function get_broadcast_events_since(int $last_id): array {
+        $queue = get_transient('sbi_broadcast_events');
+        if (!is_array($queue)) { return []; }
+        return array_values(array_filter($queue, static function($e) use ($last_id) {
+            return isset($e['id']) && (int)$e['id'] > $last_id;
+        }));
     }
 
     /**
