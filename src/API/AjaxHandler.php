@@ -532,14 +532,24 @@ class AjaxHandler {
 
             error_log( sprintf( 'SBI INSTALL: Calling installation service for %s/%s', $owner, $repo_name ) );
 
-            // Set progress callback for the installation service
-            $this->installation_service->set_progress_callback( [ $this, 'send_progress_update' ] );
+            // Set progress callback for the installation service using a closure.
+            // Using a closure avoids PHP visibility issues with private methods when
+            // the callback is invoked from another class context.
+            $this->installation_service->set_progress_callback( function( string $step, string $status, string $message = '' ): void {
+                $this->send_progress_update( $step, $status, $message );
+            } );
 
             // NOTE TO FUTURE CONTRIBUTORS AND LLMs:
             // The debug_steps/progress_updates and enhanced error mapping below are
             // critical for field debugging. Do NOT remove or simplify. If you must
             // refactor, preserve equivalent structured debug output.
+            // Buffer any stray output from WordPress upgrader/skin to keep JSON clean
+            ob_start();
             $result = $this->installation_service->install_and_activate( $owner, $repo_name, $activate );
+            $suppressed_output = ob_get_clean();
+            if ( ! empty( $suppressed_output ) ) {
+                error_log( 'SBI INSTALL: Suppressed output during install: ' . substr( $suppressed_output, 0, 2000 ) );
+            }
 
             if ( is_wp_error( $result ) ) {
                 $error_code = $result->get_error_code();
@@ -575,11 +585,14 @@ class AjaxHandler {
                 error_log( sprintf( 'SBI INSTALL: Installation failed for %s/%s: %s (Code: %s)',
                     $owner, $repo_name, $error_message, $error_code ) );
 
+                $error_data = $result->get_error_data();
                 wp_send_json_error( [
                     'message' => $enhanced_message,
                     'repository' => $repo_name,
                     'debug_steps' => $debug_steps,
                     'progress_updates' => $this->progress_updates,
+                    'upgrader_messages' => is_array( $error_data ) && isset( $error_data['messages'] ) ? $error_data['messages'] : [],
+                    'download_url' => is_array( $error_data ) && isset( $error_data['download_url'] ) ? $error_data['download_url'] : null,
                     'troubleshooting' => [
                         'check_repository_exists' => sprintf( 'https://github.com/%s/%s', $owner, $repo_name ),
                         'verify_repository_public' => 'Make sure the repository is public',

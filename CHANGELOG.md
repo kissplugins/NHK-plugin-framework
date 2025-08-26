@@ -5,6 +5,16 @@ All notable changes to the KISS Smart Batch Installer will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.29] - 2025-08-26
+
+### Added
+- Surface Upgrader messages and download URL in AJAX error payloads when install() returns false, to speed field debugging.
+
+## [1.0.28] - 2025-08-26
+
+### Fixed
+- Install AJAX JSON parse error: Upgrader skin echoed HTML during AJAX, causing “Unrecognized token '<'”. Silenced WP_Upgrader skin header/footer/before/after/error and buffered output during install to keep responses pure JSON.
+
 ## [1.0.27] - 2025-08-26
 
 ### Fixed

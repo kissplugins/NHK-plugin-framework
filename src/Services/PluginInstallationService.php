@@ -21,12 +21,16 @@ if ( ! class_exists( 'Plugin_Upgrader' ) ) {
 if ( ! function_exists( 'activate_plugin' ) ) {
     require_once ABSPATH . 'wp-admin/includes/plugin.php';
 }
+// Filesystem helpers
+if ( ! function_exists( 'get_filesystem_method' ) ) {
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+}
 
 /**
  * Handles WordPress plugin installation from GitHub repositories.
  */
 class PluginInstallationService {
-    
+
     /**
      * GitHub service for repository operations.
      *
@@ -40,7 +44,7 @@ class PluginInstallationService {
      * @var callable|null
      */
     private $progress_callback;
-    
+
     /**
      * Constructor.
      *
@@ -71,7 +75,7 @@ class PluginInstallationService {
             call_user_func( $this->progress_callback, $step, $status, $message );
         }
     }
-    
+
     /**
      * Install a plugin from a GitHub repository.
      *
@@ -138,7 +142,48 @@ class PluginInstallationService {
             return new WP_Error( 'invalid_url', __( 'Download URL must use HTTPS.', 'kiss-smart-batch-installer' ) );
         }
 
-        // Create a custom skin to capture output
+        // Preflight: ensure necessary directories are writable
+        $this->send_progress( 'Preflight Check', 'info', 'Checking directories and unzip support...' );
+        $upgrade_dir = WP_CONTENT_DIR . '/upgrade';
+        if ( ! file_exists( $upgrade_dir ) ) {
+            @wp_mkdir_p( $upgrade_dir );
+        }
+        $issues = [];
+        if ( ! is_dir( $upgrade_dir ) || ! is_writable( $upgrade_dir ) ) {
+            $issues[] = 'wp-content/upgrade is not writable';
+        }
+        if ( ! defined( 'WP_PLUGIN_DIR' ) || ! is_dir( WP_PLUGIN_DIR ) || ! is_writable( WP_PLUGIN_DIR ) ) {
+            $issues[] = 'WP_PLUGIN_DIR is not writable';
+        }
+        if ( ! class_exists( 'ZipArchive' ) ) {
+            // WordPress can fall back to PclZip, but note lack of ZipArchive
+            $issues[] = 'PHP ZipArchive not available (will fallback to PclZip)';
+        }
+        if ( ! empty( $issues ) ) {
+            $msg = 'Preflight issues: ' . implode( '; ', $issues );
+            error_log( 'SBI INSTALL SERVICE: ' . $msg );
+            $this->send_progress( 'Preflight Check', 'error', $msg );
+            return new WP_Error( 'preflight_failed', __( 'Environment not writable for plugin installation.', 'kiss-smart-batch-installer' ), [ 'issues' => $issues ] );
+        }
+        $this->send_progress( 'Preflight Check', 'success', 'Directories and unzip support look OK' );
+
+        // Prepare WP_Filesystem (ensures unzip and write access)
+        $this->send_progress( 'Filesystem Init', 'info', 'Initializing filesystem...' );
+        $fs_ok = WP_Filesystem();
+        if ( ! $fs_ok ) {
+            $this->send_progress( 'Filesystem Init', 'error', 'Could not initialize WP_Filesystem. Check file permissions.' );
+            error_log( 'SBI INSTALL SERVICE: WP_Filesystem initialization failed' );
+            return new WP_Error( 'fs_init_failed', __( 'Could not initialize filesystem API. Verify permissions for wp-content/plugins and wp-content/upgrade.', 'kiss-smart-batch-installer' ) );
+        }
+        $method = function_exists( 'get_filesystem_method' ) ? get_filesystem_method() : 'unknown';
+        if ( $method !== 'direct' ) {
+            $this->send_progress( 'Filesystem Init', 'warning', 'Filesystem method requires credentials (method: ' . $method . ')' );
+            error_log( sprintf( 'SBI INSTALL SERVICE: Filesystem method is %s (non-direct). AJAX cannot prompt for credentials.', $method ) );
+            return new WP_Error( 'fs_method_unsupported', __( 'Your server requires filesystem credentials (FTP/SSH) to install plugins. The AJAX installer cannot prompt for these. Configure direct FS access or set FS_METHOD in wp-config.php.', 'kiss-smart-batch-installer' ) );
+        }
+        $this->send_progress( 'Filesystem Init', 'success', 'Filesystem ready' );
+
+        // Create a custom skin to capture output and silence HTML
         error_log( 'SBI INSTALL SERVICE: Creating upgrader skin' );
         $skin = new SBI_Plugin_Upgrader_Skin();
 
@@ -214,7 +259,14 @@ class PluginInstallationService {
             $this->send_progress( 'Plugin Installation', 'error', 'Installation failed - see debug log for details' );
             error_log( 'SBI INSTALL SERVICE: Installation failed - upgrader returned false' );
             error_log( sprintf( 'SBI INSTALL SERVICE: Upgrader messages: %s', implode( '; ', $messages ) ) );
-            return new WP_Error( 'installation_failed', __( 'Plugin installation failed.', 'kiss-smart-batch-installer' ) );
+            return new WP_Error(
+                'installation_failed',
+                __( 'Plugin installation failed.', 'kiss-smart-batch-installer' ),
+                [
+                    'messages' => $messages,
+                    'download_url' => $download_url,
+                ]
+            );
         }
 
         $this->send_progress( 'Plugin Installation', 'success', 'Plugin files downloaded and extracted successfully' );
@@ -231,7 +283,7 @@ class PluginInstallationService {
             error_log( sprintf( 'SBI INSTALL SERVICE: Upgrader messages: %s', implode( '; ', $messages ) ) );
             return new WP_Error( 'plugin_file_not_found', __( 'Plugin was installed but plugin file could not be determined.', 'kiss-smart-batch-installer' ) );
         }
-        
+
         $messages = $skin->get_messages();
         error_log( sprintf( 'SBI INSTALL SERVICE: Installation completed successfully for %s/%s', $owner, $repo ) );
         error_log( sprintf( 'SBI INSTALL SERVICE: Plugin file: %s', $plugin_file ) );
@@ -245,7 +297,7 @@ class PluginInstallationService {
             'messages' => $messages,
         ];
     }
-    
+
     /**
      * Activate a plugin.
      *
@@ -256,31 +308,31 @@ class PluginInstallationService {
         if ( empty( $plugin_file ) ) {
             return new WP_Error( 'invalid_plugin_file', __( 'Plugin file is required.', 'kiss-smart-batch-installer' ) );
         }
-        
+
         // Check if user has permission to activate plugins
         if ( ! current_user_can( 'activate_plugins' ) ) {
             return new WP_Error( 'insufficient_permissions', __( 'You do not have permission to activate plugins.', 'kiss-smart-batch-installer' ) );
         }
-        
+
         // Check if plugin is already active
         if ( is_plugin_active( $plugin_file ) ) {
             return new WP_Error( 'already_active', __( 'Plugin is already active.', 'kiss-smart-batch-installer' ) );
         }
-        
+
         // Activate the plugin
         $result = activate_plugin( $plugin_file );
-        
+
         if ( is_wp_error( $result ) ) {
             return $result;
         }
-        
+
         return [
             'success' => true,
             'plugin_file' => $plugin_file,
             'message' => __( 'Plugin activated successfully.', 'kiss-smart-batch-installer' ),
         ];
     }
-    
+
     /**
      * Deactivate a plugin.
      *
@@ -291,27 +343,27 @@ class PluginInstallationService {
         if ( empty( $plugin_file ) ) {
             return new WP_Error( 'invalid_plugin_file', __( 'Plugin file is required.', 'kiss-smart-batch-installer' ) );
         }
-        
+
         // Check if user has permission to deactivate plugins
         if ( ! current_user_can( 'activate_plugins' ) ) {
             return new WP_Error( 'insufficient_permissions', __( 'You do not have permission to deactivate plugins.', 'kiss-smart-batch-installer' ) );
         }
-        
+
         // Check if plugin is active
         if ( ! is_plugin_active( $plugin_file ) ) {
             return new WP_Error( 'not_active', __( 'Plugin is not active.', 'kiss-smart-batch-installer' ) );
         }
-        
+
         // Deactivate the plugin
         deactivate_plugins( $plugin_file );
-        
+
         return [
             'success' => true,
             'plugin_file' => $plugin_file,
             'message' => __( 'Plugin deactivated successfully.', 'kiss-smart-batch-installer' ),
         ];
     }
-    
+
     /**
      * Install and optionally activate a plugin from a repository.
      *
@@ -324,13 +376,13 @@ class PluginInstallationService {
     public function install_and_activate( string $owner, string $repo, bool $activate = false, string $branch = 'main' ) {
         // Install the plugin
         $install_result = $this->install_plugin( $owner, $repo, $branch );
-        
+
         if ( is_wp_error( $install_result ) ) {
             return $install_result;
         }
-        
+
         $result = $install_result;
-        
+
         // Activate if requested
         if ( $activate && isset( $install_result['plugin_file'] ) ) {
             $this->send_progress( 'Plugin Activation', 'info', 'Activating plugin...' );
@@ -348,10 +400,10 @@ class PluginInstallationService {
         } else {
             $result['activated'] = false;
         }
-        
+
         return $result;
     }
-    
+
     /**
      * Batch install multiple plugins.
      *
@@ -361,7 +413,7 @@ class PluginInstallationService {
      */
     public function batch_install( array $repositories, bool $activate = false ) {
         $results = [];
-        
+
         foreach ( $repositories as $repo_data ) {
             if ( ! isset( $repo_data['owner'] ) || ! isset( $repo_data['repo'] ) ) {
                 $results[] = [
@@ -371,14 +423,14 @@ class PluginInstallationService {
                 ];
                 continue;
             }
-            
-            $result = $this->install_and_activate( 
-                $repo_data['owner'], 
-                $repo_data['repo'], 
+
+            $result = $this->install_and_activate(
+                $repo_data['owner'],
+                $repo_data['repo'],
                 $activate,
                 $repo_data['branch'] ?? 'main'
             );
-            
+
             if ( is_wp_error( $result ) ) {
                 $results[] = [
                     'repository' => $repo_data['repo'],
@@ -391,7 +443,7 @@ class PluginInstallationService {
                 ] );
             }
         }
-        
+
         return $results;
     }
 
@@ -449,14 +501,14 @@ class PluginInstallationService {
  * Custom upgrader skin to capture installation messages.
  */
 class SBI_Plugin_Upgrader_Skin extends WP_Upgrader_Skin {
-    
+
     /**
      * Messages captured during installation.
      *
      * @var array
      */
     private array $messages = [];
-    
+
     /**
      * Capture feedback messages.
      *
@@ -467,16 +519,33 @@ class SBI_Plugin_Upgrader_Skin extends WP_Upgrader_Skin {
         if ( isset( $this->upgrader->strings[ $string ] ) ) {
             $string = $this->upgrader->strings[ $string ];
         }
-        
+
         if ( strpos( $string, '%' ) !== false ) {
             if ( $args ) {
                 $string = vsprintf( $string, $args );
             }
         }
-        
+
         $this->messages[] = $string;
     }
-    
+
+    // Silence header/footer/before/after to prevent any HTML output during AJAX
+    public function header() { $this->done_header = true; }
+    public function footer() { $this->done_footer = true; }
+    public function before() {}
+    public function after() {}
+
+    // Capture errors as messages instead of echoing
+    public function error( $errors ) {
+        if ( is_wp_error( $errors ) ) {
+            $this->messages[] = $errors->get_error_message();
+        } elseif ( is_string( $errors ) ) {
+            $this->messages[] = $errors;
+        } else {
+            $this->messages[] = 'Unknown installation error';
+        }
+    }
+
     /**
      * Get captured messages.
      *
