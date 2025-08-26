@@ -1021,8 +1021,14 @@ class AjaxHandler {
      */
     public function get_installation_progress(): void {
         $this->verify_nonce_and_capability();
-
-        // TODO: Implement actual progress tracking
+        // For now, return mock progress data
+        wp_send_json_success( [
+            'progress' => 75,
+            'current_step' => __( 'Installing plugin dependencies...', 'kiss-smart-batch-installer' ),
+            'completed' => 3,
+            'total' => 4,
+        ] );
+    }
 
     /**
      * Server-Sent Events stream for state broadcasts (experimental).

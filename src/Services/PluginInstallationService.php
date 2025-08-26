@@ -114,16 +114,7 @@ class PluginInstallationService {
         error_log( 'SBI INSTALL SERVICE: Getting repository information from GitHub' );
         $repo_info = $this->github_service->get_repository( $owner, $repo );
         if ( is_wp_error( $repo_info ) ) {
-    /**
-     * Guess repository full name from a plugin file path using the directory as slug.
-     */
-    private function guess_repo_from_plugin_file(string $plugin_file): string {
-        $dir = dirname($plugin_file);
-        $slug = basename($dir);
-        // Prefer an organization option if available
-        $org = get_option('sbi_github_organization', '');
-        return $org ? ($org . '/' . $slug) : $slug;
-    }
+
 
             error_log( sprintf( 'SBI INSTALL SERVICE: Failed to get repository info: %s', $repo_info->get_error_message() ) );
             $this->send_progress( 'Repository Verification', 'error', 'Repository not found or inaccessible' );
@@ -213,6 +204,7 @@ class PluginInstallationService {
 
         // Add filter to monitor and force HTTPS for all requests
         $https_filter = function( $args, $url ) use ( $download_url ) {
+
             // Force HTTPS for any GitHub-related URLs
             if ( strpos( $url, 'github.com' ) !== false || strpos( $url, 'githubusercontent.com' ) !== false ) {
                 error_log( sprintf( 'SBI INSTALL SERVICE: HTTP request for GitHub URL: %s', $url ) );
@@ -378,6 +370,7 @@ class PluginInstallationService {
             return new WP_Error( 'not_active', __( 'Plugin is not active.', 'kiss-smart-batch-installer' ) );
         }
 
+
         // Deactivate the plugin
         deactivate_plugins( $plugin_file );
 
@@ -397,6 +390,16 @@ class PluginInstallationService {
      * @param string $branch Branch to install from.
      * @return array|WP_Error Combined installation and activation result.
      */
+    /**
+     * Guess repository full name from a plugin file path using the directory as slug.
+     */
+    private function guess_repo_from_plugin_file(string $plugin_file): string {
+        $dir = dirname($plugin_file);
+        $slug = basename($dir);
+        $org = get_option('sbi_github_organization', '');
+        return $org ? ($org . '/' . $slug) : $slug;
+    }
+
     public function install_and_activate( string $owner, string $repo, bool $activate = false, string $branch = 'main' ) {
         // Install the plugin
         $install_result = $this->install_plugin( $owner, $repo, $branch );

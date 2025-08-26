@@ -344,6 +344,10 @@ class StateManager {
         if ( is_plugin_active( $plugin_file ) ) {
             return PluginState::INSTALLED_ACTIVE;
         }
+
+        return PluginState::INSTALLED_INACTIVE;
+    }
+
     /**
      * Public helpers for installed/active/file queries via FSM + runtime.
      */
@@ -351,6 +355,7 @@ class StateManager {
         $slug = $this->extract_plugin_slug($repository);
         return $this->find_plugin_file($slug);
     }
+
     public function isInstalled(string $repository): bool {
         $state = $this->get_state($repository);
         if (in_array($state, [PluginState::INSTALLED_ACTIVE, PluginState::INSTALLED_INACTIVE], true)) {
@@ -359,6 +364,7 @@ class StateManager {
         // Fallback to runtime file discovery
         return $this->getInstalledPluginFile($repository) !== '';
     }
+
     public function isActive(string $repository): bool {
         $state = $this->get_state($repository);
         if ($state === PluginState::INSTALLED_ACTIVE) return true;
@@ -368,10 +374,6 @@ class StateManager {
             return is_plugin_active($file);
         }
         return false;
-    }
-
-
-        return PluginState::INSTALLED_INACTIVE;
     }
 
     /**
