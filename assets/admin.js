@@ -23,6 +23,39 @@
     /**
      * Initialize debug system
      */
+        // Extend debug system with SSE sub-panel helpers
+        try {
+            var logSSE = function(kind, msg) {
+                if (window.sbiDebug && typeof window.sbiDebug.addEntry === 'function') {
+                    window.sbiDebug.addEntry('info', 'SSE ' + kind, msg);
+                }
+                var $panel = document.getElementById('sbi-debug-log');
+                if ($panel) {
+                    var $wrap = document.getElementById('sbi-sse-log');
+                    if (!$wrap) {
+                        var container = document.createElement('div');
+                        container.id = 'sbi-sse-log';
+                        container.style.marginTop = '10px';
+                        container.style.borderTop = '1px solid #ddd';
+                        container.innerHTML = '<div style="font-weight:bold;margin:6px 0;">SSE Events</div><div id="sbi-sse-events"></div>';
+                        $panel.appendChild(container);
+                    }
+                    var $events = document.getElementById('sbi-sse-events');
+                    if ($events) {
+                        var div = document.createElement('div');
+                        var ts = new Date().toLocaleTimeString();
+                        div.textContent = '[' + ts + '] ' + msg;
+                        $events.prepend(div);
+                        // Cap to last ~50 entries
+                        while ($events.childNodes.length > 50) {
+                            $events.removeChild($events.lastChild);
+                        }
+                    }
+                }
+            };
+            window.SBI.logSSE = logSSE;
+        } catch(_){}
+
     SBI.initDebugSystem = function() {
         // Create global debug object if it doesn't exist
         if (typeof window.sbiDebug === 'undefined') {
@@ -67,13 +100,14 @@
         if (typeof sbiAjax !== 'undefined' && sbiAjax.sseEnabled) {
             var sseUrl = sbiAjax.ajaxurl + '?action=sbi_state_stream';
             var es = new EventSource(sseUrl);
-            es.addEventListener('open', function(){ try { SBI.debug && SBI.debug('SSE stream opened'); } catch(_){} });
-            es.addEventListener('error', function(){ try { SBI.debug && SBI.debug('SSE stream error'); } catch(_){} });
+            es.addEventListener('open', function(){ try { if (SBI.logSSE) SBI.logSSE('open', 'SSE stream opened'); } catch(_){} });
+            es.addEventListener('error', function(){ try { if (SBI.logSSE) SBI.logSSE('error', 'SSE stream error'); } catch(_){} });
             es.addEventListener('state_changed', function(e){
                 try {
                     var payload = JSON.parse(e.data || '{}');
                     var repo = payload.repository;
                     var to = payload.to;
+                    if (SBI.logSSE) SBI.logSSE('event', repo + ' -> ' + to);
                     if (repo && to && window.SBIts && window.SBIts.repositoryFSM) {
                         window.SBIts.repositoryFSM.set(repo, to);
                         window.SBIts.repositoryFSM.applyToRow(repo, to);

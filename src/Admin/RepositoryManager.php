@@ -107,6 +107,33 @@ class RepositoryManager {
             <?php endif; ?>
         </div>
 
+            <script>
+            (function(){
+                document.addEventListener('click', function(e){
+                    var btn = e.target && e.target.closest && e.target.closest('#sbi-test-sse');
+                    if (!btn) return;
+                    e.preventDefault();
+                    if (!window.sbiAjax) return;
+                    // Use current organization or default test repo
+                    var org = (document.getElementById('github_organization')||{}).value || 'kissplugins';
+                    var repo = org + '/SSE-Diagnostics';
+                    var data = { action:'sbi_test_sse', repository: repo, nonce: sbiAjax.nonce };
+                    try { if (window.sbiDebug) window.sbiDebug.addEntry('info','SSE Test','Triggering SSE test for ' + repo); } catch(_){ }
+                    fetch(sbiAjax.ajaxurl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams(data)
+                    }).then(function(r){ return r.text(); }).then(function(txt){
+                        try { var resp = JSON.parse(txt); if (!resp.success) throw new Error(resp.data && resp.data.message || 'SSE test failed');
+                            if (window.sbiDebug) window.sbiDebug.addEntry('success','SSE Test', resp.data && resp.data.message || 'OK');
+                            if (window.SBI && window.SBI.logSSE) window.SBI.logSSE('test', 'Triggered test; watch for state_changed events');
+                        } catch(e){
+                            if (window.sbiDebug) window.sbiDebug.addEntry('error','SSE Test Error', String(e));
+                        }
+                    }).catch(function(err){ if (window.sbiDebug) window.sbiDebug.addEntry('error','SSE Test Fetch', String(err)); });
+                });
+            })();
+            </script>
         <?php $this->render_styles(); ?>
         <?php $this->render_scripts(); ?>
         <?php
@@ -616,6 +643,9 @@ class RepositoryManager {
                         <input type="submit" name="sbi_action" value="refresh_repositories" class="button button-secondary"
                                onclick="this.form.elements['sbi_action'].value='refresh_repositories';"
                                style="margin-left: 10px;"
+                            <button type="button" id="sbi-test-sse" class="button button-secondary" style="margin-left: 10px;">
+                                <?php esc_html_e( 'Test SSE', 'kiss-smart-batch-installer' ); ?>
+                            </button>
                                value="<?php esc_attr_e( 'Refresh Cache', 'kiss-smart-batch-installer' ); ?>">
                         <button type="button" id="debug-detection" class="button button-secondary" style="margin-left: 10px;">
                             <?php esc_html_e( 'Debug Detection', 'kiss-smart-batch-installer' ); ?>

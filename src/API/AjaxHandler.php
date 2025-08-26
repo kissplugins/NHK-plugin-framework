@@ -101,6 +101,7 @@ class AjaxHandler {
         // Experimental SSE stream for state changes (admin-only)
         add_action( 'wp_ajax_sbi_state_stream', [ $this, 'state_stream' ] );
 
+        add_action( 'wp_ajax_sbi_test_sse', [ $this, 'test_sse' ] );
         // UI tips
         add_action( 'wp_ajax_sbi_dismiss_webonly_tip', [ $this, 'dismiss_webonly_tip' ] );
     }
@@ -1071,6 +1072,23 @@ class AjaxHandler {
             }
             // Sleep briefly to avoid tight loop
             usleep(300000); // 300ms
+
+    /**
+     * Trigger a harmless transition to validate SSE pipeline.
+     */
+    public function test_sse(): void {
+        $this->verify_nonce_and_capability();
+        if ( ! get_option( 'sbi_sse_diagnostics', false ) ) {
+            wp_send_json_error([ 'message' => __( 'SSE diagnostics disabled.', 'kiss-smart-batch-installer' ) ]);
+        }
+        $repo = sanitize_text_field( $_POST['repository'] ?? 'kissplugins/SSE-Test' );
+        $from = $this->state_manager->get_state($repo);
+        // Flip to CHECKING then back
+        $this->state_manager->transition($repo, PluginState::CHECKING, [ 'source' => 'sse_test' ]);
+        $this->state_manager->transition($repo, $from, [ 'source' => 'sse_test_restore' ]);
+        wp_send_json_success([ 'repository' => $repo, 'message' => 'SSE test transitions emitted' ]);
+    }
+
             if ( connection_aborted() ) { break; }
         }
         // end of stream cycle; client reconnects automatically
