@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.30] - 2025-08-26
 
 ### Fixed
+- UI: Avoid full-page reloads after install/activate/deactivate/refresh. Now we AJAX-refresh only the affected row using sbi_refresh_repository (which returns row_html). This preserves scroll and the visible debug panel.
 - False positives showing Install for already-installed plugins: made installed-plugin detection slug matching normalization-aware (case-insensitive and separator-insensitive) in StateManager and RepositoryListTable. This helps map repos like `KISS-Plugin-Quick-Search` to directories/files like `kiss-plugin-quick-search` or `kisspluginquicksearch`.
 
 ## [1.0.29] - 2025-08-26

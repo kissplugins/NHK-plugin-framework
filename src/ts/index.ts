@@ -13,6 +13,7 @@ export { mapResponseToError, mapExceptionToError } from './lib/errors';
 export type { AjaxErrorDetails } from './lib/errors';
 
 export { installPlugin, activatePlugin, deactivatePlugin, refreshStatus } from './admin/handlers';
+export { repositoryFSM, RepositoryFSM } from './admin/repositoryFSM';
 
 // Smoke test to ensure bundling works when later integrated
 export function tsScaffoldHello(): string {

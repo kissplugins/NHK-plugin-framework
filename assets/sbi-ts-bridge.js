@@ -31,6 +31,7 @@
       activatePlugin: (win, repository, plugin_file) => mod.activatePlugin(win, repository, plugin_file),
       deactivatePlugin: (win, repository, plugin_file) => mod.deactivatePlugin(win, repository, plugin_file),
       refreshStatus: (win, repositories) => mod.refreshStatus(win, repositories),
+      repositoryFSM: mod.repositoryFSM,
     };
   } catch (e) {
     // Swallow errors; admin.js will fallback gracefully

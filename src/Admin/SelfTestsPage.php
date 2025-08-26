@@ -293,7 +293,8 @@ class SelfTestsPage {
             'data_integrity' => 'Data Integrity Tests',
             'regression_protection' => 'Regression Protection Tests',
             'plugin_detection_reliability' => 'Plugin Detection Reliability Tests',
-            'github_api_resilience' => 'GitHub API Resilience Tests'
+            'github_api_resilience' => 'GitHub API Resilience Tests',
+            'fsm_locks' => 'FSM Processing Lock Tests'
         ];
 
         foreach ( $test_categories as $category => $title ) {
@@ -690,6 +691,58 @@ class SelfTestsPage {
             }
 
             return 'Data consistency maintained across multiple processing attempts';
+
+    /**
+     * Test FSM processing lock behavior.
+     */
+    private function test_fsm_locks(): array {
+        $tests = [];
+
+        // Test 1: Acquire and reject second lock
+        $tests[] = $this->run_test('Processing Lock - contention', function() {
+            $repo = 'kissplugins/KISS-Smart-Batch-Installer';
+            $acq1 = $this->state_manager->acquire_processing_lock($repo, 5);
+            if (!$acq1) { throw new \Exception('Expected first lock acquisition to succeed'); }
+            $acq2 = $this->state_manager->acquire_processing_lock($repo, 5);
+            // release first lock
+            $this->state_manager->release_processing_lock($repo);
+            if ($acq2) { throw new \Exception('Expected second lock acquisition to be rejected'); }
+            return 'First lock acquired; second attempt rejected; released OK';
+        });
+
+        // Test 2: Ajax handler rejects concurrent operation
+        $tests[] = $this->run_test('Processing Lock - Ajax rejection', function() {
+            // Simulate lock held by another operation
+            $repo = 'kissplugins/KISS-Smart-Batch-Installer';
+            $this->state_manager->acquire_processing_lock($repo, 5);
+
+            // Directly call activate with lock held; expect JSON error structure
+            $_POST['repository'] = $repo;
+            $_POST['plugin_file'] = 'kiss-smart-batch-installer/kiss-smart-batch-installer.php';
+            $_POST['nonce'] = wp_create_nonce('sbi_ajax_nonce');
+
+            // Buffer output to capture wp_send_json_* behavior for testing
+            ob_start();
+            try {
+                $this->ajax_handler->activate_plugin();
+            } catch (\Throwable $e) {
+                // ignore; wp_send_json_* may exit
+            }
+            $resp = ob_get_clean();
+
+            // Clean up
+            $this->state_manager->release_processing_lock($repo);
+
+            if (strpos((string)$resp, 'Another operation is in progress') === false) {
+                throw new \Exception('Expected lock rejection message in AJAX response');
+            }
+
+            return 'AJAX activation rejected with lock contention message as expected';
+        });
+
+        return $tests;
+    }
+
         });
 
         return $tests;

@@ -388,12 +388,14 @@ class AjaxHandler {
     }
 
     /**
-     * Refresh single repository status.
+     * Refresh single repository status and return updated row HTML.
      */
     public function refresh_repository(): void {
         $this->verify_nonce_and_capability();
 
         $repo_name = sanitize_text_field( $_POST['repository'] ?? '' );
+        $repo_owner = ''; $repo_slug = '';
+        if ( strpos( $repo_name, '/' ) !== false ) { list( $repo_owner, $repo_slug ) = explode( '/', $repo_name, 2 ); }
 
         if ( empty( $repo_name ) ) {
             wp_send_json_error( [
@@ -405,9 +407,41 @@ class AjaxHandler {
         $this->state_manager->refresh_state( $repo_name );
         $new_state = $this->state_manager->get_state( $repo_name );
 
+        // Build minimal repo structure to render row
+        $repo = [
+            'full_name' => $repo_name,
+            'name' => $repo_slug ?: $repo_name,
+            'owner' => [ 'login' => $repo_owner ],
+            'description' => '',
+        ];
+
+        // Enrich with detection metadata (best-effort; do not block on errors)
+        $det = $this->detection_service->detect_plugin( $repo );
+        $is_plugin = ! is_wp_error( $det ) && ( $det['is_plugin'] ?? false );
+        $plugin_file = '';
+        $plugin_data = [];
+        if ( $is_plugin ) {
+            $plugin_file = $det['plugin_file'] ?? '';
+            $plugin_data = $det['plugin_data'] ?? [];
+        }
+
+        // Render row via list table
+        $list_table = new \SBI\Admin\RepositoryListTable(
+            $this->github_service,
+            $this->detection_service,
+            $this->state_manager
+        );
+        $row_html = $list_table->render_single_row( array_merge( $repo, [
+            'is_plugin' => $is_plugin,
+            'plugin_file' => $plugin_file,
+            'plugin_data' => $plugin_data,
+            'installation_state' => $new_state,
+        ] ) );
+
         wp_send_json_success( [
             'repository' => $repo_name,
             'state' => $new_state->value,
+            'row_html' => $row_html,
         ] );
     }
 
@@ -457,9 +491,6 @@ class AjaxHandler {
             ];
 
             $this->send_progress_update( 'Security Verification', 'success', 'Security checks passed' );
-
-            // FSM: mark repository as checking prior to install attempt
-            $this->state_manager->transition( sprintf('%s/%s', $owner, $repo_name), PluginState::CHECKING, [ 'source' => 'ajax_install' ] );
 
             // Step 2: Parameter validation
             $debug_steps[] = [
@@ -520,7 +551,7 @@ class AjaxHandler {
 
             $this->send_progress_update( 'Parameter Validation', 'success', "Validated parameters for {$owner}/{$repo_name}" );
 
-            // Step 3: Plugin installation
+            // Step 3: Plugin installation (with processing lock)
             $debug_steps[] = [
                 'step' => 'Plugin Installation',
                 'status' => 'starting',
@@ -532,23 +563,42 @@ class AjaxHandler {
 
             error_log( sprintf( 'SBI INSTALL: Calling installation service for %s/%s', $owner, $repo_name ) );
 
-            // Set progress callback for the installation service using a closure.
-            // Using a closure avoids PHP visibility issues with private methods when
-            // the callback is invoked from another class context.
-            $this->installation_service->set_progress_callback( function( string $step, string $status, string $message = '' ): void {
-                $this->send_progress_update( $step, $status, $message );
-            } );
+            $repo_full = sprintf('%s/%s', $owner, $repo_name);
+            if (! $this->state_manager->acquire_processing_lock($repo_full)) {
+                $debug_steps[] = [
+                    'step' => 'Plugin Installation',
+                    'status' => 'failed',
+                    'error' => 'Another operation is in progress for this repository',
+                    'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
+                ];
+                wp_send_json_error([
+                    'message' => __( 'Another operation is in progress for this repository. Please try again shortly.', 'kiss-smart-batch-installer' ),
+                    'repository' => $repo_name,
+                    'debug_steps' => $debug_steps,
+                    'progress_updates' => $this->progress_updates,
+                ]);
+            }
 
-            // NOTE TO FUTURE CONTRIBUTORS AND LLMs:
-            // The debug_steps/progress_updates and enhanced error mapping below are
-            // critical for field debugging. Do NOT remove or simplify. If you must
-            // refactor, preserve equivalent structured debug output.
-            // Buffer any stray output from WordPress upgrader/skin to keep JSON clean
-            ob_start();
-            $result = $this->installation_service->install_and_activate( $owner, $repo_name, $activate );
-            $suppressed_output = ob_get_clean();
-            if ( ! empty( $suppressed_output ) ) {
-                error_log( 'SBI INSTALL: Suppressed output during install: ' . substr( $suppressed_output, 0, 2000 ) );
+            // Ensure lock release
+            try {
+                // Set progress callback for the installation service using a closure.
+                $this->installation_service->set_progress_callback( function( string $step, string $status, string $message = '' ): void {
+                    $this->send_progress_update( $step, $status, $message );
+                } );
+
+                // NOTE TO FUTURE CONTRIBUTORS AND LLMs:
+                // The debug_steps/progress_updates and enhanced error mapping below are
+                // critical for field debugging. Do NOT remove or simplify. If you must
+                // refactor, preserve equivalent structured debug output.
+                // Buffer any stray output from WordPress upgrader/skin to keep JSON clean
+                ob_start();
+                $result = $this->installation_service->install_and_activate( $owner, $repo_name, $activate );
+                $suppressed_output = ob_get_clean();
+                if ( ! empty( $suppressed_output ) ) {
+                    error_log( 'SBI INSTALL: Suppressed output during install: ' . substr( $suppressed_output, 0, 2000 ) );
+                }
+            } finally {
+                $this->state_manager->release_processing_lock($repo_full);
             }
 
             if ( is_wp_error( $result ) ) {
@@ -687,28 +737,40 @@ class AjaxHandler {
             ] );
         }
 
-        // Activate the plugin
-        $result = $this->installation_service->activate_plugin( $plugin_file );
-
-        if ( is_wp_error( $result ) ) {
-            // FSM: mark error state for this repo
-            if ( ! empty( $repo_name ) ) {
-                $this->state_manager->transition( $repo_name, PluginState::ERROR, [ 'source' => 'ajax_activate' ] );
-            }
-            wp_send_json_error( [
-                'message' => $result->get_error_message(),
+        $repo_full = $repo_name;
+        if (! empty($repo_full) && ! $this->state_manager->acquire_processing_lock($repo_full)) {
+            wp_send_json_error([
+                'message' => __( 'Another operation is in progress for this repository. Please try again shortly.', 'kiss-smart-batch-installer' ),
                 'repository' => $repo_name,
-            ] );
+            ]);
         }
 
-        // FSM: set repo active state
-        if ( ! empty( $repo_name ) ) {
-            $this->state_manager->transition( $repo_name, PluginState::INSTALLED_ACTIVE, [ 'source' => 'ajax_activate' ] );
-        }
+        try {
+            // Activate the plugin
+            $result = $this->installation_service->activate_plugin( $plugin_file );
 
-        wp_send_json_success( array_merge( $result, [
-            'repository' => $repo_name,
-        ] ) );
+            if ( is_wp_error( $result ) ) {
+                // FSM: mark error state for this repo
+                if ( ! empty( $repo_name ) ) {
+                    $this->state_manager->transition( $repo_name, PluginState::ERROR, [ 'source' => 'ajax_activate' ] );
+                }
+                wp_send_json_error( [
+                    'message' => $result->get_error_message(),
+                    'repository' => $repo_name,
+                ] );
+            }
+
+            // FSM: set repo active state
+            if ( ! empty( $repo_name ) ) {
+                $this->state_manager->transition( $repo_name, PluginState::INSTALLED_ACTIVE, [ 'source' => 'ajax_activate' ] );
+            }
+
+            wp_send_json_success( array_merge( $result, [
+                'repository' => $repo_name,
+            ] ) );
+        } finally {
+            if (! empty($repo_full)) { $this->state_manager->release_processing_lock($repo_full); }
+        }
     }
 
     /**
@@ -726,28 +788,40 @@ class AjaxHandler {
             ] );
         }
 
-        // Deactivate the plugin
-        $result = $this->installation_service->deactivate_plugin( $plugin_file );
-
-        if ( is_wp_error( $result ) ) {
-            // FSM: mark error state for this repo
-            if ( ! empty( $repo_name ) ) {
-                $this->state_manager->transition( $repo_name, PluginState::ERROR, [ 'source' => 'ajax_deactivate' ] );
-            }
-            wp_send_json_error( [
-                'message' => $result->get_error_message(),
+        $repo_full = $repo_name;
+        if (! empty($repo_full) && ! $this->state_manager->acquire_processing_lock($repo_full)) {
+            wp_send_json_error([
+                'message' => __( 'Another operation is in progress for this repository. Please try again shortly.', 'kiss-smart-batch-installer' ),
                 'repository' => $repo_name,
-            ] );
+            ]);
         }
 
-        // FSM: set repo inactive state
-        if ( ! empty( $repo_name ) ) {
-            $this->state_manager->transition( $repo_name, PluginState::INSTALLED_INACTIVE, [ 'source' => 'ajax_deactivate' ] );
-        }
+        try {
+            // Deactivate the plugin
+            $result = $this->installation_service->deactivate_plugin( $plugin_file );
 
-        wp_send_json_success( array_merge( $result, [
-            'repository' => $repo_name,
-        ] ) );
+            if ( is_wp_error( $result ) ) {
+                // FSM: mark error state for this repo
+                if ( ! empty( $repo_name ) ) {
+                    $this->state_manager->transition( $repo_name, PluginState::ERROR, [ 'source' => 'ajax_deactivate' ] );
+                }
+                wp_send_json_error( [
+                    'message' => $result->get_error_message(),
+                    'repository' => $repo_name,
+                ] );
+            }
+
+            // FSM: set repo inactive state
+            if ( ! empty( $repo_name ) ) {
+                $this->state_manager->transition( $repo_name, PluginState::INSTALLED_INACTIVE, [ 'source' => 'ajax_deactivate' ] );
+            }
+
+            wp_send_json_success( array_merge( $result, [
+                'repository' => $repo_name,
+            ] ) );
+        } finally {
+            if (! empty($repo_full)) { $this->state_manager->release_processing_lock($repo_full); }
+        }
     }
 
     /**

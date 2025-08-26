@@ -158,7 +158,8 @@
                                 }
                                 SBI.showMessage('Plugin installed successfully', 'success');
                                 $button.text('Installed').removeClass('sbi-install-plugin').removeClass('button-primary').addClass('button-secondary');
-                                setTimeout(function(){ location.reload(); }, 1000);
+                                // Refresh only this repository row (no full page reload)
+                                SBI.refreshRow(repository, $button);
                             } else {
                                 if (window.sbiDebug) {
                                     var msg = (response && response.data && response.data.message) || 'Unknown error';
@@ -283,10 +284,8 @@
 
                 SBI.showMessage('Plugin installed successfully', 'success');
                 $button.text('Installed').removeClass('sbi-install-plugin').removeClass('button-primary').addClass('button-secondary');
-                // Refresh the page to update status
-                setTimeout(function() {
-                    location.reload();
-                }, 1000);
+                // Refresh only this repository row (no full page reload)
+                SBI.refreshRow(repository, $button);
             } else {
                 if (window.sbiDebug) {
                     window.sbiDebug.addEntry('error', 'Install Failed',
@@ -416,10 +415,8 @@
             if (response.success) {
                 SBI.showMessage('Plugin activated successfully', 'success');
                 $button.text('Activated').removeClass('sbi-activate-plugin');
-                // Refresh the page to update status
-                setTimeout(function() {
-                    location.reload();
-                }, 1000);
+                // Refresh only this repository row (no full page reload)
+                SBI.refreshRow(repository, $button);
             } else {
                 SBI.showMessage(response.data.message || 'Activation failed', 'error');
                 $button.prop('disabled', false).text('Activate');
@@ -458,10 +455,8 @@
             if (response.success) {
                 SBI.showMessage('Plugin deactivated successfully', 'success');
                 $button.text('Deactivated').removeClass('sbi-deactivate-plugin');
-                // Refresh the page to update status
-                setTimeout(function() {
-                    location.reload();
-                }, 1000);
+                // Refresh only this repository row (no full page reload)
+                SBI.refreshRow(repository, $button);
             } else {
                 SBI.showMessage(response.data.message || 'Deactivation failed', 'error');
                 $button.prop('disabled', false).text('Deactivate');
@@ -497,10 +492,8 @@
         .done(function(response) {
             if (response.success) {
                 SBI.showMessage('Repository refreshed successfully', 'success');
-                // Refresh the page to update status
-                setTimeout(function() {
-                    location.reload();
-                }, 1000);
+                // Refresh only this repository row (no full page reload)
+                SBI.refreshRow(repository, $button);
             } else {
                 SBI.showMessage(response.data.message || 'Refresh failed', 'error');
                 $button.prop('disabled', false).text('Refresh');
@@ -527,6 +520,42 @@
         type = type || 'info';
 
         var $message = $('<div class="sbi-message ' + type + '">' + message + '</div>');
+
+    /**
+     * Refresh a single repository row using AJAX (no full page reload).
+     * @param {string} repository owner/repo
+     * @param {jQuery} $trigger optional button to re-enable text/state
+     */
+    SBI.refreshRow = function(repository, $trigger) {
+        try { if ($trigger && $trigger.length) { $trigger.prop('disabled', true).text('Refreshing...'); } } catch(_){}
+
+        $.post(sbiAjax.ajaxurl, {
+            action: 'sbi_refresh_repository',
+            repository: repository,
+            nonce: sbiAjax.nonce
+        })
+        .done(function(resp){
+            if (!resp || !resp.success) {
+                SBI.showMessage((resp && resp.data && resp.data.message) || 'Refresh failed', 'error');
+                return;
+            }
+            // Replace the row HTML if provided
+            try {
+                var rowId = 'repo-' + repository.replace(/[^a-zA-Z0-9_-]/g, '-');
+                var $row = document.getElementById(rowId);
+                if ($row && resp.data && resp.data.row_html) {
+                    $($row).replaceWith(resp.data.row_html);
+                }
+            } catch(_){}
+        })
+        .fail(function(){
+            SBI.showMessage('Refresh request failed', 'error');
+        })
+        .always(function(){
+            try { if ($trigger && $trigger.length) { $trigger.prop('disabled', false).text('Refresh'); } } catch(_){}
+        });
+    };
+
 
         // Find a good place to show the message
         var $container = $('.sbi-container').first();

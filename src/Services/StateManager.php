@@ -124,6 +124,32 @@ class StateManager {
     }
 
     /**
+     * Acquire a short-lived processing lock for a repository.
+     * Returns true if acquired, false if already locked.
+     */
+    public function acquire_processing_lock(string $repository, int $ttl_seconds = 60): bool {
+        $key = 'sbi_lock_' . md5($repository);
+        // Attempt to add; add_option will fail if option exists. Use transients for TTL.
+        if (false !== get_transient($key)) {
+            return false; // already locked
+        }
+        set_transient($key, 1, $ttl_seconds);
+        $this->log_event($repository, 'lock_acquired', [ 'ttl' => $ttl_seconds ]);
+        return true;
+    }
+
+    /**
+     * Release a processing lock for a repository.
+     */
+    public function release_processing_lock(string $repository): void {
+        $key = 'sbi_lock_' . md5($repository);
+        delete_transient($key);
+        $this->log_event($repository, 'lock_released');
+    }
+
+
+
+    /**
      * Read recent events for a repo (for Self Tests/UI).
      */
     public function get_events(string $repository, int $limit = 10): array {
