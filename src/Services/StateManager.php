@@ -264,7 +264,12 @@ class StateManager {
     public function refresh_state( string $repository ): void {
         // Move through CHECKING to determined state; bypass transition validation for refresh
         $this->transition( $repository, PluginState::CHECKING, [ 'source' => 'refresh_state' ], true );
+        // Consolidated detection + cache path
         $state = $this->determine_plugin_state( $repository );
+        // If still unknown and not installed, try consolidated detect_plugin_state()
+        if ( $state === PluginState::UNKNOWN ) {
+            $state = $this->detect_plugin_state( $repository );
+        }
         $this->transition( $repository, $state, [ 'source' => 'refresh_state' ], true );
     }
 
@@ -398,6 +403,42 @@ class StateManager {
         }
 
         return '';
+    /**
+     * Fast cache-based heuristic for plugin presence using PQS cache only.
+     * @param string $repository owner/repo
+     * @return bool
+     */
+    private function check_cache_state( string $repository ): bool {
+        $pqs_cache = $this->pqs_integration->get_cache();
+        $plugin_slug = $this->extract_plugin_slug( $repository );
+        return isset( $pqs_cache[ $plugin_slug ] );
+    }
+
+    /**
+     * Detect plugin state when not installed.
+     * Combines PQS cache and header scan to return a conservative PluginState.
+     * @param string $repository owner/repo
+     * @return PluginState
+     */
+    private function detect_plugin_state( string $repository ): PluginState {
+        // 1) PQS cache (fast path)
+        if ( $this->check_cache_state( $repository ) ) {
+            return PluginState::AVAILABLE;
+        }
+        // 2) Authoritative detection path via wrapped detection service
+        $slug = $this->extract_plugin_slug( $repository );
+        $repo = [ 'full_name' => $repository, 'name' => $slug ];
+        $det = $this->detect_plugin_info( $repo );
+        if ( is_wp_error( $det ) ) {
+            return PluginState::UNKNOWN;
+        }
+        if ( ! empty( $det['is_plugin'] ) ) {
+            return PluginState::AVAILABLE;
+        }
+        // Conservative default: UNKNOWN when headers not found
+        return PluginState::UNKNOWN;
+    }
+
     }
 
     /**
@@ -422,7 +463,7 @@ class StateManager {
             'name' => $plugin_slug,
         ];
         try {
-            $det = $this->detection_service->detect_plugin( $repo );
+            $det = $this->detect_plugin_info( $repo );
             if ( is_wp_error( $det ) ) {
                 return false;
             }
@@ -432,6 +473,33 @@ class StateManager {
             return false;
         }
     }
+    /**
+     * Wrapper for plugin detection to centralize calls and logging.
+     * Preserves existing detailed debug behavior inside PluginDetectionService.
+     *
+     * @param array $repository Minimal repo array with keys: full_name, name, description?
+     * @param bool $force_refresh Bypass detection cache
+     * @return array|\WP_Error
+     */
+    public function detect_plugin_info( array $repository, bool $force_refresh = false ) {
+        try {
+            $res = $this->detection_service->detect_plugin( $repository, $force_refresh );
+            // Log a compact breadcrumb for diagnostics without spamming logs
+            $this->log_event(
+                $repository['full_name'] ?? 'unknown',
+                'detect_plugin',
+                [
+                    'result' => is_wp_error($res) ? 'error' : (( $res['is_plugin'] ?? false ) ? 'is_plugin' : 'not_plugin'),
+                    'scan_method' => is_wp_error($res) ? 'wp_error' : ($res['scan_method'] ?? ''),
+                ]
+            );
+            return $res;
+        } catch ( \Throwable $e ) {
+            $this->log_event( $repository['full_name'] ?? 'unknown', 'detect_plugin_error', [ 'message' => $e->getMessage() ] );
+            return new \WP_Error( 'detection_failed', $e->getMessage() );
+        }
+    }
+
 
     /**
      * Load cached states from WordPress transients.

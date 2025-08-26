@@ -133,7 +133,7 @@ class AjaxHandler {
         // Process repositories with detection enrichment; FSM is Single Source of Truth (SSoT)
         $processed_repos = [];
         foreach ( $repositories as $repo ) {
-            $detection_result = $this->detection_service->detect_plugin( $repo );
+            $detection_result = $this->state_manager->detect_plugin_info( $repo );
             $state = $this->state_manager->get_state( $repo['full_name'] );
 
             // Derive canonical plugin flag from FSM state only
@@ -244,9 +244,9 @@ class AjaxHandler {
 
         error_log( sprintf( 'SBI AJAX: Starting plugin detection for %s', $repo['full_name'] ) );
 
-        // Process repository with plugin detection
+        // Process repository with plugin detection (through StateManager wrapper)
         try {
-            $detection_result = $this->detection_service->detect_plugin( $repo );
+            $detection_result = $this->state_manager->detect_plugin_info( $repo );
             $is_plugin = ! is_wp_error( $detection_result ) && $detection_result['is_plugin'];
 
             // FSM-first: refresh and read canonical state
@@ -260,11 +260,8 @@ class AjaxHandler {
 
             if ( ! empty( $installed_plugin_file ) ) {
                 // Installed: align state with runtime activation to be extra safe
-                if ( is_plugin_active( $installed_plugin_file ) ) {
-                    $state = PluginState::INSTALLED_ACTIVE;
-                } else {
-                    $state = PluginState::INSTALLED_INACTIVE;
-                }
+                // Use FSM as source of truth for installed state
+                $state = $this->state_manager->get_state( $repo['full_name'], true );
                 $plugin_file = $installed_plugin_file;
             } else {
                 // Not installed: SAFEGUARD — if detection says plugin but FSM says NOT_PLUGIN, treat as AVAILABLE
@@ -421,7 +418,7 @@ class AjaxHandler {
         ];
 
         // Enrich with detection metadata (best-effort; do not block on errors)
-        $det = $this->detection_service->detect_plugin( $repo );
+        $det = $this->state_manager->detect_plugin_info( $repo );
         $is_plugin = ! is_wp_error( $det ) && ( $det['is_plugin'] ?? false );
         $plugin_file = '';
         $plugin_data = [];

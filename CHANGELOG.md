@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.30] - 2025-08-26
+## [1.0.31] - 2025-08-26
+
+### Added
+- Admin setting to enable/disable SSE diagnostics (sbi_sse_diagnostics)
+- EventSource listener in admin.js when SSE is enabled
+- Debug panel "SSE Events" sub-section showing last ~50 events
+- Ajax action `sbi_test_sse` and "Test SSE" button to emit harmless transitions and validate the pipeline
+- StateManager::detect_plugin_info wrapper centralizing detection calls and logging
+- StateManager private helpers: check_cache_state() and detect_plugin_state() used during consolidation
+
+### Changed
+- AjaxHandler and RepositoryListTable now call StateManager::detect_plugin_info instead of using PluginDetectionService directly
+- AjaxHandler avoids direct is_plugin_active() as a state source for installed paths; reads FSM state instead
+- Localized sbiAjax.sseEnabled and gated SSE endpoint with sbi_sse_diagnostics
+
+### Notes
+- SSE stream remains admin-only and opt-in
+- Kept runtime uses of is_plugin_active() in PluginInstallationService for safety; will be further consolidated in a follow-up
+
 
 ### Fixed
 - UI: Avoid full-page reloads after install/activate/deactivate/refresh. Now we AJAX-refresh only the affected row using sbi_refresh_repository (which returns row_html). This preserves scroll and the visible debug panel.

@@ -314,8 +314,8 @@ class PluginInstallationService {
             return new WP_Error( 'insufficient_permissions', __( 'You do not have permission to activate plugins.', 'kiss-smart-batch-installer' ) );
         }
 
-        // Check if plugin is already active
-        if ( is_plugin_active( $plugin_file ) ) {
+        // Check if plugin is already active (keep runtime check for safety)
+        if ( function_exists('is_plugin_active') && is_plugin_active( $plugin_file ) ) {
             return new WP_Error( 'already_active', __( 'Plugin is already active.', 'kiss-smart-batch-installer' ) );
         }
 
@@ -349,8 +349,8 @@ class PluginInstallationService {
             return new WP_Error( 'insufficient_permissions', __( 'You do not have permission to deactivate plugins.', 'kiss-smart-batch-installer' ) );
         }
 
-        // Check if plugin is active
-        if ( ! is_plugin_active( $plugin_file ) ) {
+        // Check if plugin is active (keep runtime check for safety)
+        if ( function_exists('is_plugin_active') && ! is_plugin_active( $plugin_file ) ) {
             return new WP_Error( 'not_active', __( 'Plugin is not active.', 'kiss-smart-batch-installer' ) );
         }
 

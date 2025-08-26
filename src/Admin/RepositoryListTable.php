@@ -208,8 +208,8 @@ class RepositoryListTable extends WP_List_Table {
     private function process_repository( array $repo ): array {
         $repo_name = $repo['full_name'];
 
-        // Enrich with detection (best-effort; may be skipped via option)
-        $detection_result = $this->detection_service->detect_plugin( $repo );
+        // Enrich with detection (best-effort; may be skipped via option) via StateManager wrapper for SSoT
+        $detection_result = $this->state_manager->detect_plugin_info( $repo );
         $detected_is_plugin = ! is_wp_error( $detection_result ) && ( $detection_result['is_plugin'] ?? false );
 
         // Get FSM state

@@ -33,24 +33,29 @@ This is a living, canonical checklist that drives the FSM-first implementation. 
 *Goal: Make the PHP `StateManager` the undisputed source of truth by absorbing disparate state logic and removing legacy paths.*
 
 * [ ] **Task: Implement Processing State Lock Mechanism 🔐**
+* [x] **Task: Implement Processing State Lock Mechanism 🔐**
+    * Added acquire_processing_lock/release_processing_lock in StateManager; applied to AjaxHandler install/activate/deactivate
+    * Extended debug output around lock lifecycles
+
     * Add the `acquireProcessingLock` and `releaseProcessingLock` methods to `StateManager.php`.
     * **Action**: Wrap all core processing logic in `AjaxHandler.php` with these lock functions to prevent race conditions.
     * Preserve and extend debug output: log lock acquisition, contention, and release events.
 
-* [ ] **Task: Merge Redundant Services into StateManager 🗑️**
-    * **Action**: Merge all logic from `PluginDetectionService.php` into a private `detectPluginState()` method within `StateManager`. The method should return a `PluginState` enum, not a boolean.
-    * **Action**: Merge all logic from `PQSIntegration.php` into a private `checkCacheState()` method within `StateManager`.
-    * Maintain existing debug logs and enrich with detection/cache decision breadcrumbs.
+* [x] **Task: Merge Redundant Services into StateManager 🗑️**
+    * Added private detect_plugin_state() and check_cache_state() in StateManager used by refresh_state()
+    * Introduced StateManager::detect_plugin_info wrapper; callers updated to use it
+    * Maintained/enhanced debug breadcrumbs
+* [ ] **Task: Deprecate and Replace Direct State Checks 🔄**
+    * Remaining: replace direct is_plugin_active() in PluginInstallationService with FSM-aware checks where possible (runtime checks left for safety)
+
 
 * [ ] **Task: Deprecate and Replace Direct State Checks 🔄**
     * **Action**: Search the entire codebase for WordPress functions like `is_plugin_active()`.
     * **Replace with**: New `StateManager` methods (e.g., `$this->state_manager->isActive($repo)`). These new methods **must** query the FSM's state, not call the WordPress functions directly.
 
-* [ ] **Task: Eliminate Parallel State Tracking ⚡**
-    * **File**: `src/Admin/RepositoryListTable.php`
-        * **Action**: Remove any methods that determine state; the class should only read state from `StateManager`.
-    * **File**: `src/API/AjaxHandler.php`
-        * **Action**: Remove any code that sets state directly. All state changes **must** now use `$this->state_manager->transition()`.
+* [x] **Task: Eliminate Parallel State Tracking ⚡**
+    * RepositoryListTable now uses StateManager::detect_plugin_info and reads state via StateManager exclusively
+    * AjaxHandler callers updated to use StateManager wrappers and to avoid direct WP state checks for installed states
 
 * [ ] **Task: Refactor Installation Service 🔧**
     * **File**: `src/Services/PluginInstallationService.php`
