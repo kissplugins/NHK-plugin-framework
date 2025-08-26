@@ -1,0 +1,10 @@
+{
+  "name": "nhk-poc",
+  "version": "1.0.0",
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "build": "tsc assets/ts/fsm.ts --target ES2017 --module commonjs --outDir assets/dist"
+  }
+}
