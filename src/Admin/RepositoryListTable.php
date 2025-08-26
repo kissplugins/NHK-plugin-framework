@@ -442,7 +442,15 @@ class RepositoryListTable extends WP_List_Table {
     }
 
     /**
-     * Helper method to find installed plugin file.
+     * Normalize strings for robust slug comparisons.
+     */
+    private function normalize_slug_str(string $s): string {
+        $s = strtolower($s);
+        return preg_replace('/[^a-z0-9]/', '', $s) ?? '';
+    }
+
+    /**
+     * Helper method to find installed plugin file (tolerant to case/separators).
      */
     private function find_installed_plugin( string $plugin_slug ): string {
         if ( ! function_exists( 'get_plugins' ) ) {
@@ -450,12 +458,20 @@ class RepositoryListTable extends WP_List_Table {
         }
 
         $all_plugins = get_plugins();
+        $norm_slug = $this->normalize_slug_str($plugin_slug);
 
         foreach ( $all_plugins as $plugin_file => $plugin_data ) {
             $plugin_dir = dirname( $plugin_file );
+            $base_file = basename( $plugin_file, '.php' );
 
-            // Check if plugin directory matches the slug
-            if ( $plugin_dir === $plugin_slug || $plugin_file === $plugin_slug . '.php' ) {
+            $norm_dir = $this->normalize_slug_str($plugin_dir);
+            $norm_base = $this->normalize_slug_str($base_file);
+
+            if ( $norm_dir === $norm_slug || $norm_base === $norm_slug ) {
+                return $plugin_file;
+            }
+
+            if ( str_starts_with( $norm_dir, $norm_slug ) || str_starts_with( $norm_slug, $norm_dir ) ) {
                 return $plugin_file;
             }
         }

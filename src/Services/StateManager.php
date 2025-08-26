@@ -278,7 +278,18 @@ class StateManager {
     }
 
     /**
+     * Normalize a slug or file/directory name for robust comparisons.
+     */
+    private function normalize_slug_str(string $s): string {
+        $s = strtolower($s);
+        // Remove non-alphanumeric to ignore separators like -, _, space
+        return preg_replace('/[^a-z0-9]/', '', $s) ?? '';
+    }
+
+    /**
      * Find plugin file for a given slug.
+     *
+     * Robust to case, separator differences, and minor prefix/suffix variations.
      *
      * @param string $plugin_slug Plugin slug.
      * @return string Plugin file path or empty string if not found.
@@ -289,18 +300,22 @@ class StateManager {
         }
 
         $all_plugins = get_plugins();
+        $norm_slug = $this->normalize_slug_str($plugin_slug);
 
-        // Look for exact match first
         foreach ( $all_plugins as $plugin_file => $plugin_data ) {
             $plugin_dir = dirname( $plugin_file );
-            if ( $plugin_dir === $plugin_slug || $plugin_file === $plugin_slug . '.php' ) {
+            $base_file = basename( $plugin_file, '.php' );
+
+            $norm_dir = $this->normalize_slug_str($plugin_dir);
+            $norm_base = $this->normalize_slug_str($base_file);
+
+            // Strong matches first
+            if ( $norm_dir === $norm_slug || $norm_base === $norm_slug ) {
                 return $plugin_file;
             }
-        }
 
-        // Look for partial matches
-        foreach ( $all_plugins as $plugin_file => $plugin_data ) {
-            if ( strpos( $plugin_file, $plugin_slug ) === 0 ) {
+            // Tolerate small variations (e.g., repo "KISS-Plugin-Quick-Search" vs dir "kisspluginquicksearch")
+            if ( str_starts_with( $norm_dir, $norm_slug ) || str_starts_with( $norm_slug, $norm_dir ) ) {
                 return $plugin_file;
             }
         }

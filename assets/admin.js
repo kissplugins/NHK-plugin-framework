@@ -176,6 +176,22 @@
                                             window.sbiDebug.addEntry('info', 'Troubleshooting', troubleshooting.check_spelling);
                                         }
                                     }
+
+                                    // NEW: Surface upgrader messages and download URL in debug panel and console
+                                    try { window.SBI.lastInstallResponse = response; } catch(_) {}
+                                    if (response && response.data && Array.isArray(response.data.upgrader_messages) && response.data.upgrader_messages.length) {
+                                        window.sbiDebug.addEntry('error', 'Upgrader', 'Messages from WordPress upgrader:');
+                                        try { console.groupCollapsed('SBI Upgrader Messages'); } catch(_){ }
+                                        response.data.upgrader_messages.forEach(function(m){
+                                            window.sbiDebug.addEntry('error', 'Upgrader', String(m));
+                                            try { console.log('[SBI Upgrader]', m); } catch(_){ }
+                                        });
+                                        try { console.groupEnd(); } catch(_){ }
+                                    }
+                                    if (response && response.data && response.data.download_url) {
+                                        window.sbiDebug.addEntry('info', 'Download URL', response.data.download_url);
+                                        try { console.log('[SBI Download URL]', response.data.download_url); } catch(_){ }
+                                    }
                                 }
                                 var errorMessage = (response && response.data && response.data.message) || 'Unknown error';
                                 if (errorMessage.indexOf('404') !== -1 || errorMessage.indexOf('not found') !== -1) {
@@ -184,6 +200,16 @@
                                     errorMessage += '• Verify the repository is public (not private)\n';
                                     errorMessage += '• Check that owner and repository names are spelled correctly';
                                 }
+                                // NEW: mirror upgrader details into banner
+                                try {
+                                    var msgs = (response && response.data && Array.isArray(response.data.upgrader_messages)) ? response.data.upgrader_messages : [];
+                                    if (msgs && msgs.length) {
+                                        errorMessage += '\n\nDetails from WordPress Upgrader:\n- ' + msgs.join('\n- ');
+                                    }
+                                    if (response && response.data && response.data.download_url) {
+                                        errorMessage += '\nDownload URL: ' + response.data.download_url;
+                                    }
+                                } catch(_) {}
                                 SBI.showMessage(errorMessage, 'error');
                                 $button.prop('disabled', false).text('Install');
                             }
@@ -282,6 +308,22 @@
                                 troubleshooting.check_spelling);
                         }
                     }
+
+                    // NEW: Surface upgrader messages and download URL in debug panel and console
+                    try { window.SBI.lastInstallResponse = response; } catch(_) {}
+                    if (response && response.data && Array.isArray(response.data.upgrader_messages) && response.data.upgrader_messages.length) {
+                        window.sbiDebug.addEntry('error', 'Upgrader', 'Messages from WordPress upgrader:');
+                        try { console.groupCollapsed('SBI Upgrader Messages'); } catch(_){ }
+                        response.data.upgrader_messages.forEach(function(m){
+                            window.sbiDebug.addEntry('error', 'Upgrader', String(m));
+                            try { console.log('[SBI Upgrader]', m); } catch(_){ }
+                        });
+                        try { console.groupEnd(); } catch(_){ }
+                    }
+                    if (response && response.data && response.data.download_url) {
+                        window.sbiDebug.addEntry('info', 'Download URL', response.data.download_url);
+                        try { console.log('[SBI Download URL]', response.data.download_url); } catch(_){ }
+                    }
                 }
 
                 // Enhanced error message for 404 errors
@@ -293,6 +335,16 @@
                     errorMessage += '• Check that owner and repository names are spelled correctly';
                 }
 
+                // NEW: mirror upgrader details into banner
+                try {
+                    var msgs2 = (response && response.data && Array.isArray(response.data.upgrader_messages)) ? response.data.upgrader_messages : [];
+                    if (msgs2 && msgs2.length) {
+                        errorMessage += '\n\nDetails from WordPress Upgrader:\n- ' + msgs2.join('\n- ');
+                    }
+                    if (response && response.data && response.data.download_url) {
+                        errorMessage += '\nDownload URL: ' + response.data.download_url;
+                    }
+                } catch(_) {}
                 SBI.showMessage(errorMessage, 'error');
                 $button.prop('disabled', false).text('Install');
             }
