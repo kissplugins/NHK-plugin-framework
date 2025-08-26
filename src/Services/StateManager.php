@@ -331,12 +331,12 @@ class StateManager {
                 return PluginState::AVAILABLE;
             }
 
-            // If detection explicitly failed to list or scan, stay conservative
-            if ( isset( $det['scan_method'] ) && in_array( $det['scan_method'], [ 'root_listing_failed', 'no_root_php_files', 'failed', 'root_header_scan' ], true ) ) {
-                // Less specific: treat listing/empty-root/no-header as UNKNOWN
-                return PluginState::UNKNOWN;
+            // If detection explicitly concluded it's not a plugin
+            if ( isset($det['is_plugin']) && $det['is_plugin'] === false ) {
+                return PluginState::NOT_PLUGIN;
             }
 
+            // For all other cases (scan failed, etc.), default to UNKNOWN
             return PluginState::UNKNOWN;
         }
 
@@ -431,6 +431,8 @@ class StateManager {
         }
 
         return '';
+    }
+
     /**
      * Fast cache-based heuristic for plugin presence using PQS cache only.
      * @param string $repository owner/repo
@@ -467,40 +469,6 @@ class StateManager {
         return PluginState::UNKNOWN;
     }
 
-    }
-
-    /**
-     * Check if repository contains a WordPress plugin using PQS cache.
-     *
-     * @param string $repository Repository full name.
-     * @return bool True if it's a WordPress plugin.
-     */
-    private function is_wordpress_plugin( string $repository ): bool {
-        $pqs_cache = $this->pqs_integration->get_cache();
-        $plugin_slug = $this->extract_plugin_slug( $repository );
-
-        // 1) Fast path: PQS cache knows about this slug
-        if ( isset( $pqs_cache[ $plugin_slug ] ) ) {
-            return true;
-        }
-
-        // 2) Authoritative detection path: scan up to 3 root PHP files for headers
-        // Build minimal repository structure for detection service
-        $repo = [
-            'full_name' => $repository,
-            'name' => $plugin_slug,
-        ];
-        try {
-            $det = $this->detect_plugin_info( $repo );
-            if ( is_wp_error( $det ) ) {
-                return false;
-            }
-            return (bool) ( $det['is_plugin'] ?? false );
-        } catch ( \Throwable $e ) {
-            // Conservative default on failure
-            return false;
-        }
-    }
     /**
      * Wrapper for plugin detection to centralize calls and logging.
      * Preserves existing detailed debug behavior inside PluginDetectionService.
@@ -592,8 +560,10 @@ class StateManager {
      * @return string|null Plugin file path or null if not found.
      */
     public function get_plugin_file( string $repository_full_name ): ?string {
-        $state = $this->get_plugin_state( $repository_full_name );
-        return $state['plugin_file'] ?? null;
+        if ($this->isInstalled($repository_full_name)) {
+            return $this->getInstalledPluginFile($repository_full_name);
+        }
+        return null;
     }
 
     /**
