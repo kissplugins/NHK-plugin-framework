@@ -13,7 +13,7 @@ use WP_Error;
  * Handles GitHub API interactions for public repositories.
  */
 class GitHubService {
-    
+
     /**
      * GitHub API base URL.
      */
@@ -359,6 +359,64 @@ class GitHubService {
 
         return $processed_repos;
     }
+    /**
+     * Get total number of public repositories for a GitHub account.
+     * Tries organization endpoint first, then user endpoint. Caches for 10 minutes.
+     *
+     * @param string $account_name
+     * @return int|WP_Error Total public repos or WP_Error on failure
+     */
+    public function get_total_public_repos( string $account_name ) {
+        if ( empty( $account_name ) ) {
+            return new WP_Error( 'invalid_account', __( 'Account name cannot be empty.', 'kiss-smart-batch-installer' ) );
+        }
+
+        $cache_key = 'sbi_github_total_repos_' . sanitize_key( $account_name );
+        $cached = get_transient( $cache_key );
+        if ( false !== $cached ) {
+            return (int) $cached;
+        }
+
+        $args = [
+            'timeout' => 10,
+            'headers' => [
+                'User-Agent' => self::USER_AGENT,
+                'Accept' => 'application/vnd.github.v3+json',
+            ],
+        ];
+
+        // Try organization endpoint first
+        $org_url = sprintf( '%s/orgs/%s', self::API_BASE, urlencode( $account_name ) );
+        $response = wp_remote_get( $org_url, $args );
+        if ( ! is_wp_error( $response ) ) {
+            $code = wp_remote_retrieve_response_code( $response );
+            if ( 200 === $code ) {
+                $body = json_decode( wp_remote_retrieve_body( $response ), true );
+                if ( is_array( $body ) && isset( $body['public_repos'] ) ) {
+                    set_transient( $cache_key, (int) $body['public_repos'], 10 * MINUTE_IN_SECONDS );
+                    return (int) $body['public_repos'];
+                }
+            }
+        }
+
+        // Fall back to user endpoint
+        $user_url = sprintf( '%s/users/%s', self::API_BASE, urlencode( $account_name ) );
+        $response = wp_remote_get( $user_url, $args );
+        if ( ! is_wp_error( $response ) ) {
+            $code = wp_remote_retrieve_response_code( $response );
+            if ( 200 === $code ) {
+                $body = json_decode( wp_remote_retrieve_body( $response ), true );
+                if ( is_array( $body ) && isset( $body['public_repos'] ) ) {
+                    set_transient( $cache_key, (int) $body['public_repos'], 10 * MINUTE_IN_SECONDS );
+                    return (int) $body['public_repos'];
+                }
+            }
+        }
+
+        return new WP_Error( 'total_repos_unavailable', __( 'Unable to retrieve total repositories for account.', 'kiss-smart-batch-installer' ) );
+    }
+
+
 
     /**
      * Fetch repositories for a GitHub organization.
@@ -371,9 +429,9 @@ class GitHubService {
         if ( empty( $organization ) ) {
             return new WP_Error( 'invalid_organization', __( 'Organization name cannot be empty.', 'kiss-smart-batch-installer' ) );
         }
-        
+
         $cache_key = 'sbi_github_repos_' . sanitize_key( $organization );
-        
+
         // Check cache first unless force refresh
         if ( ! $force_refresh ) {
             $cached_data = get_transient( $cache_key );
@@ -381,7 +439,7 @@ class GitHubService {
                 return $cached_data;
             }
         }
-        
+
         // Fetch from GitHub API
         $base_url = sprintf( '%s/orgs/%s/repos', self::API_BASE, urlencode( $organization ) );
         $query_params = [
@@ -415,7 +473,7 @@ class GitHubService {
                 sprintf( __( 'Failed to fetch repositories: %s', 'kiss-smart-batch-installer' ), $response->get_error_message() )
             );
         }
-        
+
         $response_code = wp_remote_retrieve_response_code( $response );
         if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
             error_log( 'KISS Smart Batch Installer: GitHub API response status: ' . $response_code );
@@ -431,7 +489,7 @@ class GitHubService {
                 sprintf( __( 'GitHub API returned error code: %d', 'kiss-smart-batch-installer' ), $response_code )
             );
         }
-        
+
         $body = wp_remote_retrieve_body( $response );
         $repositories = json_decode( $body, true );
 
@@ -445,7 +503,7 @@ class GitHubService {
         if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
             error_log( 'KISS Smart Batch Installer: Found ' . count( $repositories ) . ' repositories from GitHub API' );
         }
-        
+
         // Process and filter repositories
         $processed_repos = $this->process_repositories( $repositories );
 
@@ -459,7 +517,7 @@ class GitHubService {
 
         return $processed_repos;
     }
-    
+
     /**
      * Get a specific repository.
      *
@@ -543,7 +601,7 @@ class GitHubService {
                 ]
             );
         }
-        
+
         $body = wp_remote_retrieve_body( $response );
         $repository = json_decode( $body, true );
 
@@ -563,7 +621,7 @@ class GitHubService {
 
         return $processed_repo;
     }
-    
+
     /**
      * Get GitHub API rate limit status.
      *
@@ -578,19 +636,19 @@ class GitHubService {
                 'Accept' => 'application/vnd.github.v3+json',
             ],
         ];
-        
+
         $response = wp_remote_get( $url, $args );
-        
+
         if ( is_wp_error( $response ) ) {
             return $response;
         }
-        
+
         $body = wp_remote_retrieve_body( $response );
         $rate_limit = json_decode( $body, true );
-        
+
         return $rate_limit ?: new WP_Error( 'invalid_json', __( 'Invalid rate limit response.', 'kiss-smart-batch-installer' ) );
     }
-    
+
     /**
      * Process array of repositories from GitHub API.
      *
@@ -599,14 +657,14 @@ class GitHubService {
      */
     private function process_repositories( array $repositories ): array {
         $processed = [];
-        
+
         foreach ( $repositories as $repo ) {
             $processed[] = $this->process_repository( $repo );
         }
-        
+
         return $processed;
     }
-    
+
     /**
      * Process a single repository from GitHub API.
      *
@@ -631,7 +689,7 @@ class GitHubService {
             'private' => $repo['private'] ?? false,
         ];
     }
-    
+
     /**
      * Clear cached repository data.
      *
@@ -643,12 +701,12 @@ class GitHubService {
             $cache_key = 'sbi_github_repos_' . sanitize_key( $organization );
             return delete_transient( $cache_key );
         }
-        
+
         // Clear all GitHub-related transients
         global $wpdb;
         $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_sbi_github_%'" );
         $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_sbi_github_%'" );
-        
+
         return true;
     }
 
@@ -809,7 +867,8 @@ class GitHubService {
 
         $seen_repos = [];
 
-        // Try multiple selectors to handle different GitHub layouts
+        // Try multiple selectors to handle different GitHub layouts.
+        // IMPORTANT: Aggregate results across ALL selectors and de-duplicate.
         $selectors = [
             // Current GitHub layout (2025) - repository list with h3 links
             '//h3/a[contains(@href, "/' . $account_name . '/") and not(contains(@href, "/issues")) and not(contains(@href, "/pulls")) and not(contains(@href, "/wiki")) and not(contains(@href, "/actions")) and not(contains(@href, "/security")) and not(contains(@href, "/settings"))]',
@@ -821,24 +880,95 @@ class GitHubService {
             '//a[contains(@href, "/' . $account_name . '/") and not(contains(@href, "/issues")) and not(contains(@href, "/pulls")) and not(contains(@href, "/wiki")) and not(contains(@href, "/actions")) and not(contains(@href, "/security")) and not(contains(@href, "/settings"))]',
         ];
 
+        $total_links_found = 0;
+
         foreach ( $selectors as $selector_index => $selector ) {
             $repo_links = $xpath->query( $selector );
 
             if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-                error_log( 'KISS Smart Batch Installer: Trying selector ' . ($selector_index + 1) . ': ' . $selector . ' (found ' . $repo_links->length . ' links)' );
+                error_log( 'KISS Smart Batch Installer: Selector ' . ( $selector_index + 1 ) . ' found ' . $repo_links->length . ' links' );
             }
 
-            if ( $repo_links->length > 0 ) {
-                if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-                    error_log( 'KISS Smart Batch Installer: Using selector ' . ($selector_index + 1) . ': ' . $selector . ' (found ' . $repo_links->length . ' links)' );
+            if ( ! $repo_links || $repo_links->length === 0 ) {
+                continue;
+            }
+
+            $total_links_found += $repo_links->length;
+
+            foreach ( $repo_links as $link ) {
+                $href = $link->getAttribute( 'href' );
+
+                // Extract repository name from href like "/account/repo" or "/account/repo/"
+                if ( preg_match( '#^/' . preg_quote( $account_name, '#' ) . '/([^/\?\#]+)/?$#', $href, $matches ) ) {
+                    $repo_name = $matches[1];
+
+                    // Skip if we've already seen this repo
+                    if ( isset( $seen_repos[ $repo_name ] ) ) {
+                        continue;
+                    }
+
+                    $seen_repos[ $repo_name ] = true;
+
+                    // Get repository description from nearby elements
+                    $description = '';
+                    $language = '';
+                    $updated_at = '';
+
+                    // Try to find description in various ways
+                    $parent = $link->parentNode;
+                    $attempts = 0;
+                    while ( $parent && $parent->nodeType === XML_ELEMENT_NODE && $attempts < 5 ) {
+                        // Look for description paragraph
+                        $desc_elements = $xpath->query( './/p[contains(@class, "description") or contains(@class, "repo-description")]', $parent );
+                        if ( $desc_elements->length > 0 ) {
+                            $description = trim( $desc_elements->item( 0 )->textContent );
+                        }
+
+                        // Look for language information
+                        $lang_elements = $xpath->query( './/span[contains(@class, "language")]', $parent );
+                        if ( $lang_elements->length > 0 ) {
+                            $language = trim( $lang_elements->item( 0 )->textContent );
+                        }
+
+                        // Look for updated time
+                        $time_elements = $xpath->query( './/relative-time', $parent );
+                        if ( $time_elements->length > 0 ) {
+                            $updated_at = $time_elements->item( 0 )->getAttribute( 'datetime' );
+                        }
+
+                        if ( $description || $language || $updated_at ) {
+                            break; // Found some info, stop looking
+                        }
+
+                        $parent = $parent->parentNode;
+                        $attempts++;
+                    }
+
+                    // Create repository data structure similar to API response
+                    $repositories[] = [
+                        'id' => crc32( $account_name . '/' . $repo_name ), // Generate a pseudo-ID
+                        'name' => $repo_name,
+                        'full_name' => $account_name . '/' . $repo_name,
+                        'description' => $description ?: null,
+                        'html_url' => self::WEB_BASE . '/' . $account_name . '/' . $repo_name,
+                        'clone_url' => self::WEB_BASE . '/' . $account_name . '/' . $repo_name . '.git',
+                        'default_branch' => 'main', // Default assumption
+                        'updated_at' => $updated_at ?: null,
+                        'language' => $language ?: null,
+                        'size' => 0, // Not available via web scraping
+                        'stargazers_count' => 0, // Not available via web scraping
+                        'archived' => false, // Default assumption
+                        'disabled' => false, // Default assumption
+                        'private' => false, // We're only looking at public repos
+                        'source' => 'web', // Mark as web-scraped
+                    ];
                 }
-                break; // Use the first selector that finds results
             }
         }
 
-        if ( ! isset( $repo_links ) || $repo_links->length === 0 ) {
+        if ( empty( $repositories ) ) {
             if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-                error_log( 'KISS Smart Batch Installer: No repository links found with any selector' );
+                error_log( 'KISS Smart Batch Installer: No repository links found across selectors' );
                 // Log a sample of the HTML to help debug
                 $sample_html = substr( $html, 0, 2000 );
                 error_log( 'KISS Smart Batch Installer: HTML sample: ' . $sample_html );
@@ -846,78 +976,8 @@ class GitHubService {
             return $repositories;
         }
 
-        foreach ( $repo_links as $link ) {
-            $href = $link->getAttribute( 'href' );
-
-            // Extract repository name from href like "/account/repo" or "/account/repo/"
-            if ( preg_match( '#^/' . preg_quote( $account_name, '#' ) . '/([^/\?\#]+)/?$#', $href, $matches ) ) {
-                $repo_name = $matches[1];
-
-                // Skip if we've already seen this repo
-                if ( isset( $seen_repos[ $repo_name ] ) ) {
-                    continue;
-                }
-
-                $seen_repos[ $repo_name ] = true;
-
-                // Get repository description from nearby elements
-                $description = '';
-                $language = '';
-                $updated_at = '';
-
-                // Try to find description in various ways
-                $parent = $link->parentNode;
-                $attempts = 0;
-                while ( $parent && $parent->nodeType === XML_ELEMENT_NODE && $attempts < 5 ) {
-                    // Look for description paragraph
-                    $desc_elements = $xpath->query( './/p[contains(@class, "description") or contains(@class, "repo-description")]', $parent );
-                    if ( $desc_elements->length > 0 ) {
-                        $description = trim( $desc_elements->item( 0 )->textContent );
-                    }
-
-                    // Look for language information
-                    $lang_elements = $xpath->query( './/span[contains(@class, "language")]', $parent );
-                    if ( $lang_elements->length > 0 ) {
-                        $language = trim( $lang_elements->item( 0 )->textContent );
-                    }
-
-                    // Look for updated time
-                    $time_elements = $xpath->query( './/relative-time', $parent );
-                    if ( $time_elements->length > 0 ) {
-                        $updated_at = $time_elements->item( 0 )->getAttribute( 'datetime' );
-                    }
-
-                    if ( $description || $language || $updated_at ) {
-                        break; // Found some info, stop looking
-                    }
-
-                    $parent = $parent->parentNode;
-                    $attempts++;
-                }
-
-                // Create repository data structure similar to API response
-                $repositories[] = [
-                    'id' => crc32( $account_name . '/' . $repo_name ), // Generate a pseudo-ID
-                    'name' => $repo_name,
-                    'full_name' => $account_name . '/' . $repo_name,
-                    'description' => $description ?: null,
-                    'html_url' => self::WEB_BASE . '/' . $account_name . '/' . $repo_name,
-                    'clone_url' => self::WEB_BASE . '/' . $account_name . '/' . $repo_name . '.git',
-                    'default_branch' => 'main', // Default assumption
-                    'updated_at' => $updated_at ?: null,
-                    'language' => $language ?: null,
-                    'size' => 0, // Not available via web scraping
-                    'stargazers_count' => 0, // Not available via web scraping
-                    'archived' => false, // Default assumption
-                    'disabled' => false, // Default assumption
-                    'private' => false, // We're only looking at public repos
-                    'source' => 'web', // Mark as web-scraped
-                ];
-            }
-        }
-
         if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-            error_log( 'KISS Smart Batch Installer: Parsed ' . count( $repositories ) . ' repositories from HTML' );
+            error_log( 'KISS Smart Batch Installer: Parsed ' . count( $repositories ) . ' repositories from HTML (total links scanned: ' . $total_links_found . ')' );
         }
 
         return $repositories;

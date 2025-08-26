@@ -52,19 +52,19 @@ class RepositoryManager {
      * @param PluginDetectionService  $detection_service Plugin detection service.
      * @param StateManager           $state_manager     State manager.
      */
-    public function __construct( 
-        GitHubService $github_service, 
-        PluginDetectionService $detection_service, 
-        StateManager $state_manager 
+    public function __construct(
+        GitHubService $github_service,
+        PluginDetectionService $detection_service,
+        StateManager $state_manager
     ) {
         $this->github_service = $github_service;
         $this->detection_service = $detection_service;
         $this->state_manager = $state_manager;
-        
-        $this->list_table = new RepositoryListTable( 
-            $this->github_service, 
-            $this->detection_service, 
-            $this->state_manager 
+
+        $this->list_table = new RepositoryListTable(
+            $this->github_service,
+            $this->detection_service,
+            $this->state_manager
         );
     }
 
@@ -74,10 +74,10 @@ class RepositoryManager {
     public function render(): void {
         // Handle form submissions
         $this->handle_form_submission();
-        
+
         // Get current organization setting
         $organization = get_option( 'sbi_github_organization', '' );
-        
+
         // Set organization for list table
         if ( ! empty( $organization ) ) {
             $this->list_table->set_organization( $organization );
@@ -85,7 +85,7 @@ class RepositoryManager {
 
         // For progressive loading, we don't prepare items here
         // Items will be loaded via AJAX
-        
+
         ?>
         <div class="wrap">
             <h1><?php esc_html_e( 'KISS Smart Batch Installer', 'kiss-smart-batch-installer' ); ?></h1>
@@ -97,7 +97,7 @@ class RepositoryManager {
             </p>
 
             <?php $this->render_organization_form( $organization ); ?>
-            
+
             <?php if ( ! empty( $organization ) ): ?>
                 <?php $this->render_repository_list(); ?>
             <?php else: ?>
@@ -220,17 +220,17 @@ class RepositoryManager {
      */
     private function refresh_repositories(): void {
         $organization = get_option( 'sbi_github_organization', '' );
-        
+
         if ( empty( $organization ) ) {
             add_settings_error( 'sbi_messages', 'no_organization', __( 'No organization configured.', 'kiss-smart-batch-installer' ), 'error' );
             return;
         }
-        
+
         // Clear caches
         $this->github_service->clear_cache( $organization );
         $this->detection_service->clear_cache();
         $this->state_manager->clear_cache();
-        
+
         add_settings_error( 'sbi_messages', 'cache_cleared', __( 'Repository cache refreshed successfully.', 'kiss-smart-batch-installer' ), 'success' );
     }
 
@@ -504,6 +504,19 @@ class RepositoryManager {
                                     <?php esc_html_e( 'GitHub API Only (Not Recommended)', 'kiss-smart-batch-installer' ); ?>
                                 </option>
                             </select>
+                            <?php if ( get_option('sbi_fetch_method', 'web_only') === 'web_only' && get_option('sbi_web_only_tip_dismissed', 0 ) != 1 ): ?>
+                                <div class="notice notice-warning" style="margin:10px 0;">
+                                    <p>
+                                        <?php echo wp_kses_post( sprintf(
+                                            /* translators: 1: link open, 2: link close */
+                                            __( 'Tip: If you encounter DNS/network errors when fetching repos via Web Scraping Only (e.g., “Could not resolve host: github.com”), switch Fetch Method to %1$sAuto (API with web fallback)%2$s or %1$sAPI Only%2$s temporarily.', 'kiss-smart-batch-installer' ),
+                                            '<strong>',
+                                            '</strong>'
+                                        ) ); ?>
+                                        <button type="button" class="button-link" id="sbi-dismiss-webonly-tip" style="margin-left:8px;"><?php esc_html_e('Dismiss', 'kiss-smart-batch-installer'); ?></button>
+                                    </p>
+                                </div>
+                            <?php endif; ?>
                             <p class="description">
                                 <?php esc_html_e( 'Web scraping is now the recommended method due to GitHub API reliability issues. It bypasses rate limits and provides consistent performance.', 'kiss-smart-batch-installer' ); ?>
                             </p>
@@ -620,7 +633,7 @@ class RepositoryManager {
             <?php if ( get_option( 'sbi_debug_ajax', false ) ): ?>
             <div id="sbi-debug-panel" style="display: none; margin: 20px 0; padding: 15px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px;">
                 <h4 style="margin: 0 0 10px 0; color: #856404;">🔍 AJAX Debug Information</h4>
-                <div id="sbi-debug-log" style="font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; background: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; border-radius: 3px;">
+                <div id="sbi-debug-log" style="font-family: monospace; font-size: 12px; height: 300px; min-height: 120px; max-height: 70vh; resize: vertical; overflow: auto; background: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; border-radius: 3px;">
                     <div class="debug-entry">Debug panel initialized...</div>
                 </div>
                 <button type="button" id="sbi-clear-debug" style="margin-top: 10px; padding: 5px 10px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer;">Clear Debug Log</button>
@@ -835,6 +848,7 @@ class RepositoryManager {
             var isLoading = false;
             var processingQueue = false;
             var activeRequest = null;
+            var repositoryLimit = 0;
 
             // Debug functions (only if debug is enabled)
             var debugEnabled = <?php echo get_option( 'sbi_debug_ajax', false ) ? 'true' : 'false'; ?>;
@@ -932,7 +946,7 @@ class RepositoryManager {
                 $('#sbi-repository-form').hide();
 
                 // First, fetch the repository list (using saved limit setting)
-                var repositoryLimit = <?php echo (int) get_option( 'sbi_repository_limit', 1 ); ?>;
+                repositoryLimit = <?php echo (int) get_option( 'sbi_repository_limit', 1 ); ?>;
                 var requestData = {
                     action: 'sbi_fetch_repository_list',
                     organization: org,
@@ -948,7 +962,13 @@ class RepositoryManager {
                     if (response.success) {
                         repositories = response.data.repositories;
                         totalRepositories = repositories.length;
-                        debugLog('📊 Found ' + totalRepositories + ' repositories to process');
+                        var totalAvail = (response.data && (response.data.total_available||response.data.total_available===0)) ? response.data.total_available : null;
+                        var limitUsed = response.data && response.data.limit_used ? response.data.limit_used : repositoryLimit;
+                        if (totalAvail !== null) {
+                            debugLog('📊 Found ' + totalRepositories + ' repositories to process (limit ' + limitUsed + '), GitHub total available: ' + totalAvail);
+                        } else {
+                            debugLog('📊 Found ' + totalRepositories + ' repositories to process (limit ' + limitUsed + ')');
+                        }
 
                         if (totalRepositories === 0) {
                             debugLog('⚠️ No repositories found', 'warning');
@@ -1031,18 +1051,42 @@ class RepositoryManager {
                 activeRequest = $.post(ajaxurl, requestData)
                 .done(function(response) {
                     debugAjaxResponse(response, 'Process repository: ' + repo.name);
+                    // Processing request has completed; clear handle now
+                    activeRequest = null;
+
+                    var advanceAfter = function(delayMs) {
+                        // Move to the next repository only after optional render completes
+                        debugLog('🏁 Finished processing repository: ' + repo.full_name);
+                        processingQueue = false;
+                        currentIndex++;
+                        var ms = delayMs || 5000;
+                        debugLog('⏳ Waiting ' + (ms/1000) + ' seconds before next repository...');
+                        setTimeout(function() { processNextRepository(); }, ms);
+                    };
+
                     if (response.success) {
                         debugLog('✅ Successfully processed repository: ' + repo.name, 'success');
-                        // Replace loading row with actual data
-                        replaceLoadingRow(repo.full_name, response.data.repository);
+                        // Replace loading row with actual data and wait for render
+                        var isLast = (currentIndex + 1) >= totalRepositories;
+                        var renderXhr = replaceLoadingRow(repo.full_name, response.data.repository, isLast, totalRepositories, repositoryLimit);
+                        if (renderXhr && typeof renderXhr.always === 'function') {
+                            renderXhr.always(function(){ advanceAfter(5000); });
+                        } else {
+                            // In case of unexpected missing jqXHR, advance conservatively
+                            advanceAfter(5000);
+                        }
                     } else {
                         debugLog('❌ Error processing repository: ' + repo.name + ' - ' + (response.data.message || 'Unknown error'), 'error');
-                        // Show error in the row
+                        // Show error in the row then advance
                         showRepositoryError(repo.full_name, response.data.message || 'Unknown error');
+                        advanceAfter(5000);
                     }
                 })
                 .fail(function(xhr, status, error) {
                     debugAjaxFail(xhr, status, error, 'Process repository: ' + repo.name);
+                    // Processing request failed; clear handle now
+                    activeRequest = null;
+
                     var errorMsg = 'Request failed';
                     if (status === 'timeout') {
                         errorMsg = 'Request timed out after 60 seconds';
@@ -1051,19 +1095,13 @@ class RepositoryManager {
                         errorMsg = xhr.responseJSON.data.message;
                     }
                     showRepositoryError(repo.full_name, errorMsg);
-                })
-                .always(function() {
-                    // Always move to next repository regardless of success/failure
+
+                    // Advance after failure without waiting for render
                     debugLog('🏁 Finished processing repository: ' + repo.full_name);
-                    activeRequest = null;
                     processingQueue = false;
                     currentIndex++;
-
-                    // Wait much longer between requests to be very conservative
                     debugLog('⏳ Waiting 5 seconds before next repository...');
-                    setTimeout(function() {
-                        processNextRepository();
-                    }, 5000); // Increased to 5 seconds delay
+                    setTimeout(function() { processNextRepository(); }, 5000);
                 });
             }
 
@@ -1095,7 +1133,7 @@ class RepositoryManager {
                 updateItemCount();
             }
 
-            function replaceLoadingRow(repoFullName, processedRepo) {
+            function replaceLoadingRow(repoFullName, processedRepo, isLast, listTotal, limitUsed) {
                 var rowId = 'repo-' + repoFullName.replace(/[^a-zA-Z0-9]/g, '-');
 
                 debugLog('🔄 Replacing loading row for: ' + repoFullName + ' (ID: ' + rowId + ')');
@@ -1104,18 +1142,25 @@ class RepositoryManager {
                 var requestData = {
                     action: 'sbi_render_repository_row',
                     repository: processedRepo,
-                    nonce: ajaxNonce
+                    nonce: ajaxNonce,
+                    is_last: !!isLast,
+                    list_total: listTotal || 0,
+                    limit_used: limitUsed || 0
                 };
 
                 debugAjaxCall('sbi_render_repository_row', requestData, 'Render row for: ' + repoFullName);
 
-                $.post(ajaxurl, requestData)
+                return $.post(ajaxurl, requestData)
                 .done(function(response) {
                     debugAjaxResponse(response, 'Render row for: ' + repoFullName);
                     if (response.success) {
                         debugLog('✅ Successfully rendered row for: ' + repoFullName, 'success');
                         $('#' + rowId).replaceWith(response.data.row_html);
                         debugLog('🔄 Row replaced in DOM for: ' + repoFullName);
+                        if (response.data && response.data.checksum) {
+                            var cs = response.data.checksum;
+                            debugLog('📦 Checksum — account: ' + (cs.account||'?') + ', total_available: ' + (cs.total_available!=null?cs.total_available:'?') + ', list_total: ' + (cs.list_total||0) + ', limit_used: ' + (cs.limit_used||0));
+                        }
                     } else {
                         debugLog('❌ Failed to render row for: ' + repoFullName + ' - ' + (response.data ? response.data.message : 'Unknown error'), 'error');
                         showRepositoryError(repoFullName, 'Failed to render repository row');
@@ -1179,7 +1224,7 @@ class RepositoryManager {
             }
 
             // Install plugin button - handled by admin.js
-            
+
             // Activate plugin button
             $(document).on('click', '.sbi-activate-plugin', function() {
                 var button = $(this);
@@ -1234,9 +1279,9 @@ class RepositoryManager {
             $(document).on('click', '.sbi-refresh-status', function() {
                 var button = $(this);
                 var repo = button.data('repo');
-                
+
                 button.prop('disabled', true).text('<?php esc_html_e( 'Refreshing...', 'kiss-smart-batch-installer' ); ?>');
-                
+
                 $.post(ajaxurl, {
                     action: 'sbi_refresh_repository',
                     repository: repo,
@@ -1395,6 +1440,15 @@ class RepositoryManager {
             }
 
             // Debug detection button
+
+                // One-time dismiss for web-only DNS tip
+                $(document).on('click', '#sbi-dismiss-webonly-tip', function(e){
+                    e.preventDefault();
+                    var notice = $(this).closest('.notice');
+                    notice.fadeOut(200);
+                    // Persist dismissal
+                    $.post(ajaxurl, { action: 'sbi_dismiss_webonly_tip', nonce: ajaxNonce });
+                });
             $('#debug-detection').click(function() {
                 var button = $(this);
                 button.prop('disabled', true).text('<?php esc_html_e( 'Running Debug...', 'kiss-smart-batch-installer' ); ?>');

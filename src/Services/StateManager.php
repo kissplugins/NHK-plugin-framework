@@ -250,11 +250,12 @@ class StateManager {
             }
 
             // If detection explicitly failed to list or scan, stay conservative
-            if ( isset( $det['scan_method'] ) && in_array( $det['scan_method'], [ 'root_listing_failed', 'failed' ], true ) ) {
+            if ( isset( $det['scan_method'] ) && in_array( $det['scan_method'], [ 'root_listing_failed', 'no_root_php_files', 'failed', 'root_header_scan' ], true ) ) {
+                // Less specific: treat listing/empty-root/no-header as UNKNOWN
                 return PluginState::UNKNOWN;
             }
 
-            return PluginState::NOT_PLUGIN;
+            return PluginState::UNKNOWN;
         }
 
         // Plugin is installed, check if it's active

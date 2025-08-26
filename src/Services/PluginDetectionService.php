@@ -129,14 +129,31 @@ class PluginDetectionService {
             'plugin_data' => [],
             'scan_method' => 'root_header_scan',
             'error' => null,
+            // Debug details
+            'files_considered' => [],
+            'files_scanned' => [],
+            'header_found' => false,
         ];
 
         // Per specification: do NOT guess filenames. Scan up to 3 PHP files in repo root.
         try {
             $root_php_files = $this->get_root_php_files( $repository );
 
+            // If the listing itself failed, mark as listing failed
+            if ( is_wp_error( $root_php_files ) ) {
+                $result['scan_method'] = 'root_listing_failed';
+                $result['error'] = $root_php_files->get_error_message();
+                if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                    error_log( sprintf( 'SBI Detect: listing failed for %s: %s', $repository['full_name'], $result['error'] ) );
+                }
+                return $result;
+            }
+
+            $result['files_considered'] = $root_php_files;
+
             if ( ! empty( $root_php_files ) ) {
                 $files_to_scan = array_slice( $root_php_files, 0, 3 );
+                $result['files_scanned'] = $files_to_scan;
 
                 foreach ( $files_to_scan as $file_path ) {
                     $plugin_data = $this->scan_file_for_plugin_headers( $repository, $file_path );
@@ -145,15 +162,22 @@ class PluginDetectionService {
                         $result['is_plugin'] = true;
                         $result['plugin_file'] = $file_path;
                         $result['plugin_data'] = $plugin_data;
-                        // scan_method already indicates root header scan
+                        $result['header_found'] = true;
+                        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                            error_log( sprintf( 'SBI Detect: found plugin in %s for %s', $file_path, $repository['full_name'] ) );
+                        }
                         return $result;
                     }
                 }
 
                 // No headers found in the first few root PHP files
+                $result['scan_method'] = 'root_header_scan';
+                if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                    error_log( sprintf( 'SBI Detect: scanned %d file(s) for %s, no headers found. Files: %s', count( $files_to_scan ), $repository['full_name'], implode( ',', $files_to_scan ) ) );
+                }
                 return $result;
             } else {
-                // Could not list or no PHP files in root
+                // Listing succeeded but there were no PHP files in root
                 $result['scan_method'] = 'no_root_php_files';
                 return $result;
             }
@@ -298,9 +322,9 @@ class PluginDetectionService {
      * Get all PHP files from the repository root directory.
      *
      * @param array $repository Repository data.
-     * @return array Array of PHP file names.
+     * @return array|WP_Error Array of PHP file names or WP_Error on listing failure.
      */
-    private function get_root_php_files( array $repository ): array {
+    private function get_root_php_files( array $repository ) {
         $php_files = [];
 
         // Get repository contents from GitHub API
@@ -317,14 +341,14 @@ class PluginDetectionService {
         ] );
 
         if ( is_wp_error( $response ) ) {
-            return $php_files;
+            return $response; // propagate the error up so caller can classify
         }
 
         $body = wp_remote_retrieve_body( $response );
         $contents = json_decode( $body, true );
 
         if ( ! is_array( $contents ) ) {
-            return $php_files;
+            return new \WP_Error( 'invalid_listing', 'Invalid repository contents response' );
         }
 
         // Filter for PHP files in root directory

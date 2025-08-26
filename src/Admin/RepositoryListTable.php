@@ -321,7 +321,7 @@ class RepositoryListTable extends WP_List_Table {
         }
 
         if ( $state === PluginState::NOT_PLUGIN ) {
-            return '<span style="color: #999;">❌ ' . esc_html__( 'Not a WordPress Plugin', 'kiss-smart-batch-installer' ) . '</span>';
+            return '<span style="color: #999;">❌ ' . esc_html__( 'No plugin detected', 'kiss-smart-batch-installer' ) . '</span>';
         }
 
         if ( ! $this->is_plugin_from_state( $state ) ) {
@@ -358,7 +358,7 @@ class RepositoryListTable extends WP_List_Table {
             case PluginState::AVAILABLE:
                 return '<span style="color: #0073aa;">🔵 ' . esc_html__( 'Available', 'kiss-smart-batch-installer' ) . '</span>';
             case PluginState::NOT_PLUGIN:
-                return '<span style="color: #999;">⚪ ' . esc_html__( 'Not Plugin', 'kiss-smart-batch-installer' ) . '</span>';
+                return '<span style="color: #999;">⚪ ' . esc_html__( 'No plugin detected', 'kiss-smart-batch-installer' ) . '</span>';
             case PluginState::ERROR:
                 return '<span style="color: #d63638;">🔴 ' . esc_html__( 'Error', 'kiss-smart-batch-installer' ) . '</span>';
             default:

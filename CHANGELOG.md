@@ -5,6 +5,31 @@ All notable changes to the KISS Smart Batch Installer will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.26] - 2025-08-26
+
+### Improved
+- Debug panel ergonomics: made the Debug Log viewer vertically resizable (CSS `resize: vertical`), with sensible min/max bounds. Allows stretching the log area up/down while keeping the rest of the page usable.
+
+## [1.0.25] - 2025-08-26
+
+### Fixed
+- Progressive loader stall on first repository: fixed JS ReferenceError from repositoryLimit being block-scoped inside startProgressiveLoading() but referenced in processNextRepository(). Hoisted repositoryLimit to outer scope and removed shadowing.
+
+## [1.0.24] - 2025-08-26
+
+### Fixed
+- PHP fatal on admin Plugins screen: added missing closing brace to GitHubService::fetch_repositories_for_account() that caused “unexpected token public” at get_total_public_repos(). Added quick lint and reloaded to verify no further syntax errors.
+
+## [1.0.23] - 2025-08-26
+
+### Fixed
+- Progressive loading: ensure each repository’s row is fully rendered before proceeding to the next. We now wait for the row render AJAX (sbi_render_repository_row) to complete before scheduling the next repository, preventing overlap/race in UI rows and end-of-run message.
+
+### Improved
+- TS Bridge import hardening: derive dist/ts/index.js relative to the bridge file via import.meta.url with fallback to localized window.sbiTs.indexUrl. Added mismatch warning to help detect global collisions; error log now reports the precise attempted URL.
+
+## [1.0.22] - 2025-08-25
+
 ## [1.0.16] - 2025-08-24
 
 ## [1.0.17] - 2025-08-25
@@ -12,6 +37,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.18] - 2025-08-25
 
 ## [1.0.19] - 2025-08-25
+
+## [1.0.20] - 2025-08-25
+
+## [1.0.21] - 2025-08-25
+
+### Fixed
+- Web scraping: aggregate repositories across all supported selectors instead of only the first non-empty selector. Prevents cases where only “Popular repositories” (e.g., 2 items) were returned; honors the Repository Limit setting.
+
+### Improved
+- TS Bridge diagnostics: enhanced error logging to include the attempted module URL and error message so AJAX Debug panel shows actionable details.
+
+
+### Changed
+- Self Tests: default owner/org in Repository Test updated from `kissdigital` to `kissplugins`.
+
+### Fixed
+- PluginDetectionService: syntax error in get_root_php_files function signature (missing `{`) resolved.
+- State/UI: softened NOT_PLUGIN message and mapped listing/no-header cases to UNKNOWN; added detection_details in AJAX responses.
+
 
 ### Changed
 - Detection: removed filename-guessing path; now lists repo root and scans up to 3 PHP files for WP plugin headers (requires Plugin Name). This aligns with DRY policy and avoids brittle guesses.

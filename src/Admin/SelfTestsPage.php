@@ -104,7 +104,7 @@ class SelfTestsPage {
                     <tr>
                         <th scope="row"><?php esc_html_e( 'Repository', 'kiss-smart-batch-installer' ); ?></th>
                         <td>
-                            <input type="text" id="test-repo-owner" placeholder="owner" style="width: 150px;" value="kissdigital" />
+                            <input type="text" id="test-repo-owner" placeholder="owner" style="width: 150px;" value="kissplugins" />
                             <span>/</span>
                             <input type="text" id="test-repo-name" placeholder="repository" style="width: 200px;" value="KISS-Plugin-Quick-Search" />
                             <button type="button" id="test-repository" class="button button-secondary"><?php esc_html_e( 'Test Repository', 'kiss-smart-batch-installer' ); ?></button>
@@ -977,7 +977,7 @@ class SelfTestsPage {
             ];
 
             $cases = [
-                [ 'state' => \SBI\Enums\PluginState::NOT_PLUGIN, 'expect_status' => 'Not a WordPress Plugin', 'expect_state' => 'Not Plugin' ],
+                [ 'state' => \SBI\Enums\PluginState::NOT_PLUGIN, 'expect_status' => 'No plugin detected', 'expect_state' => 'No plugin detected' ],
                 [ 'state' => \SBI\Enums\PluginState::AVAILABLE, 'expect_status' => 'WordPress Plugin', 'expect_state' => 'Available' ],
             ];
 

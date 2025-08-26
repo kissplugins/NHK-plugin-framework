@@ -77,12 +77,12 @@ class AjaxHandler {
         add_action( 'wp_ajax_sbi_process_repository', [ $this, 'process_repository' ] );
         add_action( 'wp_ajax_sbi_render_repository_row', [ $this, 'render_repository_row' ] );
         add_action( 'wp_ajax_sbi_refresh_repository', [ $this, 'refresh_repository' ] );
-        
+
         // Plugin actions
         add_action( 'wp_ajax_sbi_install_plugin', [ $this, 'install_plugin' ] );
         add_action( 'wp_ajax_sbi_activate_plugin', [ $this, 'activate_plugin' ] );
         add_action( 'wp_ajax_sbi_deactivate_plugin', [ $this, 'deactivate_plugin' ] );
-        
+
         // Batch actions
         add_action( 'wp_ajax_sbi_batch_install', [ $this, 'batch_install' ] );
         add_action( 'wp_ajax_sbi_batch_activate', [ $this, 'batch_activate' ] );
@@ -97,6 +97,8 @@ class AjaxHandler {
         // Status actions
         add_action( 'wp_ajax_sbi_refresh_status', [ $this, 'refresh_status' ] );
         add_action( 'wp_ajax_sbi_get_installation_progress', [ $this, 'get_installation_progress' ] );
+        // UI tips
+        add_action( 'wp_ajax_sbi_dismiss_webonly_tip', [ $this, 'dismiss_webonly_tip' ] );
     }
 
     /**
@@ -116,13 +118,13 @@ class AjaxHandler {
         }
 
         $repositories = $this->github_service->fetch_repositories_for_account( $account_name, $force_refresh, $limit );
-        
+
         if ( is_wp_error( $repositories ) ) {
             wp_send_json_error( [
                 'message' => $repositories->get_error_message()
             ] );
         }
-        
+
         // Process repositories with detection enrichment; FSM is Single Source of Truth (SSoT)
         $processed_repos = [];
         foreach ( $repositories as $repo ) {
@@ -175,12 +177,22 @@ class AjaxHandler {
             ] );
         }
 
-        error_log( sprintf( 'SBI AJAX: fetch_repository_list success for %s - found %d repositories', $account_name, count( $repositories ) ) );
+        // Best-effort: fetch total available public repos for checksum/visibility
+        $total_available = $this->github_service->get_total_public_repos( $account_name );
+        if ( is_wp_error( $total_available ) ) {
+            error_log( sprintf( 'SBI AJAX: total public repos unavailable for %s: %s', $account_name, $total_available->get_error_message() ) );
+            $total_available = null;
+        }
+
+        error_log( sprintf( 'SBI AJAX: fetch_repository_list success for %s - found %d repositories (limit %d, total_available %s)', $account_name, count( $repositories ), $limit, (null === $total_available ? 'n/a' : (string) $total_available) ) );
 
         // Return just the basic repository data without processing
         wp_send_json_success( [
             'repositories' => $repositories,
             'total' => count( $repositories ),
+            'account' => $account_name,
+            'total_available' => $total_available,
+            'limit_used' => $limit,
         ] );
     }
 
@@ -268,6 +280,11 @@ class AjaxHandler {
                 'state' => $state->value,
                 'scan_method' => ! is_wp_error( $detection_result ) ? ( $detection_result['scan_method'] ?? '' ) : '',
                 'error' => is_wp_error( $detection_result ) ? $detection_result->get_error_message() : null,
+                'detection_details' => ! is_wp_error( $detection_result ) ? [
+                    'files_considered' => $detection_result['files_considered'] ?? [],
+                    'files_scanned' => $detection_result['files_scanned'] ?? [],
+                    'header_found' => $detection_result['header_found'] ?? false,
+                ] : null,
             ];
 
             // Log successful processing for debugging
@@ -338,9 +355,29 @@ class AjaxHandler {
 
             error_log( sprintf( 'SBI AJAX: render_repository_row success for %s - HTML length: %d', $repo_name, strlen( $row_html ) ) );
 
+            // Optional checksum echo-through if caller provided context
+            $checksum = null;
+            $is_last = isset( $_POST['is_last'] ) ? (bool) $_POST['is_last'] : false;
+            $list_total = isset( $_POST['list_total'] ) ? intval( $_POST['list_total'] ) : 0;
+            $limit_used = isset( $_POST['limit_used'] ) ? intval( $_POST['limit_used'] ) : 0;
+            if ( $is_last ) {
+                $account = explode( '/', $repo_name )[0] ?? '';
+                $total_available = $this->github_service->get_total_public_repos( $account );
+                if ( is_wp_error( $total_available ) ) {
+                    $total_available = null;
+                }
+                $checksum = [
+                    'account' => $account,
+                    'list_total' => $list_total,
+                    'limit_used' => $limit_used,
+                    'total_available' => $total_available,
+                ];
+            }
+
             wp_send_json_success( [
                 'row_html' => $row_html,
                 'repository_id' => $repository_data['repository']['full_name'] ?? '',
+                'checksum' => $checksum,
             ] );
         } catch ( Exception $e ) {
             error_log( sprintf( 'SBI AJAX: render_repository_row failed for %s: %s', $repo_name, $e->getMessage() ) );
@@ -355,23 +392,32 @@ class AjaxHandler {
      */
     public function refresh_repository(): void {
         $this->verify_nonce_and_capability();
-        
+
         $repo_name = sanitize_text_field( $_POST['repository'] ?? '' );
-        
+
         if ( empty( $repo_name ) ) {
             wp_send_json_error( [
                 'message' => __( 'Repository name is required.', 'kiss-smart-batch-installer' )
             ] );
         }
-        
+
         // Refresh state: use StateManager FSM
         $this->state_manager->refresh_state( $repo_name );
         $new_state = $this->state_manager->get_state( $repo_name );
-        
+
         wp_send_json_success( [
             'repository' => $repo_name,
             'state' => $new_state->value,
         ] );
+    }
+
+    /**
+     * Persist dismissal of the web-only DNS tip.
+     */
+    public function dismiss_webonly_tip(): void {
+        $this->verify_nonce_and_capability();
+        update_option( 'sbi_web_only_tip_dismissed', 1 );
+        wp_send_json_success();
     }
 
     /**
@@ -696,7 +742,7 @@ class AjaxHandler {
      */
     public function batch_install(): void {
         $this->verify_nonce_and_capability();
-        
+
         $repositories = $_POST['repositories'] ?? [];
         $activate = (bool) ( $_POST['activate'] ?? false );
 
@@ -751,7 +797,7 @@ class AjaxHandler {
      */
     public function batch_activate(): void {
         $this->verify_nonce_and_capability();
-        
+
         $plugin_files = $_POST['plugin_files'] ?? [];
 
         if ( empty( $plugin_files ) || ! is_array( $plugin_files ) ) {
@@ -785,7 +831,7 @@ class AjaxHandler {
                 ] );
             }
         }
-        
+
         wp_send_json_success( [
             'results' => $results,
             'total' => count( $results ),
@@ -855,27 +901,27 @@ class AjaxHandler {
      */
     public function refresh_status(): void {
         $this->verify_nonce_and_capability();
-        
+
         $repositories = $_POST['repositories'] ?? [];
-        
+
         if ( empty( $repositories ) || ! is_array( $repositories ) ) {
             wp_send_json_error( [
                 'message' => __( 'No repositories specified.', 'kiss-smart-batch-installer' )
             ] );
         }
-        
+
         $results = [];
         foreach ( $repositories as $repo_name ) {
             $repo_name = sanitize_text_field( $repo_name );
             $this->state_manager->refresh_state( $repo_name );
             $new_state = $this->state_manager->get_state( $repo_name );
-            
+
             $results[] = [
                 'repository' => $repo_name,
                 'state' => $new_state->value,
             ];
         }
-        
+
         wp_send_json_success( [
             'results' => $results,
         ] );
@@ -886,10 +932,10 @@ class AjaxHandler {
      */
     public function get_installation_progress(): void {
         $this->verify_nonce_and_capability();
-        
+
         // TODO: Implement actual progress tracking
         // For now, return mock progress data
-        
+
         wp_send_json_success( [
             'progress' => 75,
             'current_step' => __( 'Installing plugin dependencies...', 'kiss-smart-batch-installer' ),
