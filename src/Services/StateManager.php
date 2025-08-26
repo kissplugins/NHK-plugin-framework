@@ -344,6 +344,32 @@ class StateManager {
         if ( is_plugin_active( $plugin_file ) ) {
             return PluginState::INSTALLED_ACTIVE;
         }
+    /**
+     * Public helpers for installed/active/file queries via FSM + runtime.
+     */
+    public function getInstalledPluginFile(string $repository): string {
+        $slug = $this->extract_plugin_slug($repository);
+        return $this->find_plugin_file($slug);
+    }
+    public function isInstalled(string $repository): bool {
+        $state = $this->get_state($repository);
+        if (in_array($state, [PluginState::INSTALLED_ACTIVE, PluginState::INSTALLED_INACTIVE], true)) {
+            return true;
+        }
+        // Fallback to runtime file discovery
+        return $this->getInstalledPluginFile($repository) !== '';
+    }
+    public function isActive(string $repository): bool {
+        $state = $this->get_state($repository);
+        if ($state === PluginState::INSTALLED_ACTIVE) return true;
+        if ($state === PluginState::INSTALLED_INACTIVE) return false;
+        $file = $this->getInstalledPluginFile($repository);
+        if ($file && function_exists('is_plugin_active')) {
+            return is_plugin_active($file);
+        }
+        return false;
+    }
+
 
         return PluginState::INSTALLED_INACTIVE;
     }

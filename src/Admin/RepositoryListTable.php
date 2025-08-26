@@ -401,9 +401,8 @@ class RepositoryListTable extends WP_List_Table {
                 case PluginState::INSTALLED_INACTIVE:
                     $plugin_file = $item['plugin_file'] ?? '';
                     if ( empty( $plugin_file ) ) {
-                        // Try to find the plugin file
-                        $plugin_slug = basename( $repo_full_name );
-                        $plugin_file = $this->find_installed_plugin( $plugin_slug );
+                        // Query FSM for installed plugin file (fallback included)
+                        $plugin_file = $this->state_manager->getInstalledPluginFile( $repo_full_name );
                     }
                     $actions[] = sprintf(
                         '<button type="button" class="button button-secondary sbi-activate-plugin" data-repo="%s" data-owner="%s" data-plugin-file="%s">%s</button>',
@@ -416,9 +415,8 @@ class RepositoryListTable extends WP_List_Table {
                 case PluginState::INSTALLED_ACTIVE:
                     $plugin_file = $item['plugin_file'] ?? '';
                     if ( empty( $plugin_file ) ) {
-                        // Try to find the plugin file
-                        $plugin_slug = basename( $repo_full_name );
-                        $plugin_file = $this->find_installed_plugin( $plugin_slug );
+                        // Query FSM for installed plugin file (fallback included)
+                        $plugin_file = $this->state_manager->getInstalledPluginFile( $repo_full_name );
                     }
                     $actions[] = sprintf(
                         '<button type="button" class="button button-secondary sbi-deactivate-plugin" data-repo="%s" data-owner="%s" data-plugin-file="%s">%s</button>',
@@ -450,33 +448,11 @@ class RepositoryListTable extends WP_List_Table {
     }
 
     /**
-     * Helper method to find installed plugin file (tolerant to case/separators).
+     * Deprecated: Use StateManager::getInstalledPluginFile instead.
      */
     private function find_installed_plugin( string $plugin_slug ): string {
-        if ( ! function_exists( 'get_plugins' ) ) {
-            require_once ABSPATH . 'wp-admin/includes/plugin.php';
-        }
-
-        $all_plugins = get_plugins();
-        $norm_slug = $this->normalize_slug_str($plugin_slug);
-
-        foreach ( $all_plugins as $plugin_file => $plugin_data ) {
-            $plugin_dir = dirname( $plugin_file );
-            $base_file = basename( $plugin_file, '.php' );
-
-            $norm_dir = $this->normalize_slug_str($plugin_dir);
-            $norm_base = $this->normalize_slug_str($base_file);
-
-            if ( $norm_dir === $norm_slug || $norm_base === $norm_slug ) {
-                return $plugin_file;
-            }
-
-            if ( str_starts_with( $norm_dir, $norm_slug ) || str_starts_with( $norm_slug, $norm_dir ) ) {
-                return $plugin_file;
-            }
-        }
-
-        return '';
+        $repo = $this->organization ? $this->organization . '/' . $plugin_slug : $plugin_slug;
+        return $this->state_manager->getInstalledPluginFile( $repo );
     }
 
     /**
