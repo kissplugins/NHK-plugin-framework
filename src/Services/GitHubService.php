@@ -154,13 +154,17 @@ class GitHubService {
             return new WP_Error( 'invalid_account', __( 'Account name cannot be empty.', 'kiss-smart-batch-installer' ) );
         }
 
-        $cache_key = 'sbi_github_repos_' . sanitize_key( $account_name );
+        // v2 cache key to avoid old caches that stored limited results
+        $cache_key = 'sbi_github_repos_v2_' . sanitize_key( $account_name );
 
         // Check cache first unless force refresh
         if ( ! $force_refresh ) {
             $cached_data = get_transient( $cache_key );
-            if ( false !== $cached_data ) {
-                return $cached_data;
+            if ( false !== $cached_data && is_array( $cached_data ) ) {
+                // Always slice per-request; cache stores full list
+                return ( $limit > 0 && count( $cached_data ) > $limit )
+                    ? array_slice( $cached_data, 0, $limit )
+                    : $cached_data;
             }
         }
 
@@ -177,13 +181,13 @@ class GitHubService {
             if ( ! is_wp_error( $web_result ) ) {
                 $processed_repos = $this->process_repositories( $web_result );
 
-                // Apply limit if specified
-                if ( $limit > 0 && count( $processed_repos ) > $limit ) {
-                    $processed_repos = array_slice( $processed_repos, 0, $limit );
-                }
-
+                // Cache the full list, not the limited slice
                 set_transient( $cache_key, $processed_repos, self::CACHE_EXPIRATION );
-                return $processed_repos;
+
+                // Return per-request limited view
+                return ( $limit > 0 && count( $processed_repos ) > $limit )
+                    ? array_slice( $processed_repos, 0, $limit )
+                    : $processed_repos;
             }
 
             return $web_result; // Return the web error
@@ -269,15 +273,13 @@ class GitHubService {
                         // Process the web-scraped repositories
                         $processed_repos = $this->process_repositories( $web_result );
 
-                        // Apply limit if specified
-                        if ( $limit > 0 && count( $processed_repos ) > $limit ) {
-                            $processed_repos = array_slice( $processed_repos, 0, $limit );
-                        }
-
-                        // Cache the results
+                        // Cache the full results
                         set_transient( $cache_key, $processed_repos, self::CACHE_EXPIRATION );
 
-                        return $processed_repos;
+                        // Return per-request limited view
+                        return ( $limit > 0 && count( $processed_repos ) > $limit )
+                            ? array_slice( $processed_repos, 0, $limit )
+                            : $processed_repos;
                     }
 
                     // If web fallback also fails, return the original rate limit error
@@ -307,15 +309,13 @@ class GitHubService {
                         // Process the web-scraped repositories
                         $processed_repos = $this->process_repositories( $web_result );
 
-                        // Apply limit if specified
-                        if ( $limit > 0 && count( $processed_repos ) > $limit ) {
-                            $processed_repos = array_slice( $processed_repos, 0, $limit );
-                        }
-
-                        // Cache the results
+                        // Cache the full results
                         set_transient( $cache_key, $processed_repos, self::CACHE_EXPIRATION );
 
-                        return $processed_repos;
+                        // Return per-request limited view
+                        return ( $limit > 0 && count( $processed_repos ) > $limit )
+                            ? array_slice( $processed_repos, 0, $limit )
+                            : $processed_repos;
                     }
                 }
 
@@ -349,15 +349,13 @@ class GitHubService {
         // Process and filter repositories
         $processed_repos = $this->process_repositories( $repositories );
 
-        // Apply limit if specified
-        if ( $limit > 0 && count( $processed_repos ) > $limit ) {
-            $processed_repos = array_slice( $processed_repos, 0, $limit );
-        }
-
-        // Cache the results for 1 hour
+        // Cache the full results for 1 hour
         set_transient( $cache_key, $processed_repos, HOUR_IN_SECONDS );
 
-        return $processed_repos;
+        // Return per-request limited view
+        return ( $limit > 0 && count( $processed_repos ) > $limit )
+            ? array_slice( $processed_repos, 0, $limit )
+            : $processed_repos;
     }
     /**
      * Get total number of public repositories for a GitHub account.

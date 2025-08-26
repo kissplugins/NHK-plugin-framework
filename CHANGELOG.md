@@ -5,6 +5,11 @@ All notable changes to the KISS Smart Batch Installer will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.27] - 2025-08-26
+
+### Fixed
+- Repository list limit/caching bug: cache sometimes stored a limited subset (e.g., 2) and reused it even when a higher limit (e.g., 5) was requested. Updated GitHubService to cache the full list with a new cache key (v2) and slice per-request, so increasing the limit takes effect immediately.
+
 ## [1.0.26] - 2025-08-26
 
 ### Improved
