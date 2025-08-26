@@ -102,6 +102,14 @@ class StateManager {
             'to' => $to_value,
             'context' => $context,
         ]);
+        // Broadcast hook (stub)
+        $this->broadcast('state_changed', [
+            'repository' => $repository,
+            'from' => $from_state,
+            'to' => $to_value,
+            'context' => $context,
+            'ts' => time(),
+        ]);
     }
 
     /**
@@ -157,6 +165,16 @@ class StateManager {
         $events = get_transient($key);
         if (!is_array($events)) { return []; }
         return array_slice($events, -$limit);
+    }
+
+    /**
+     * Broadcast a state-related event to listeners (stub).
+     * This is a placeholder for SSE integration; currently logs to event buffer only.
+     */
+    public function broadcast(string $event, array $payload = []): void {
+        // For now, just persist to the event log. SSE endpoint will read from here or a queue.
+        $repo = $payload['repository'] ?? 'unknown';
+        $this->log_event($repo, $event, $payload);
     }
 
     /**
