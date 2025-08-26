@@ -16,6 +16,23 @@
  * @package SBI
  */
 
+/**
+ * ========================================================================
+ * AI / LLM AGENT INSTRUCTIONS
+ * ========================================================================
+ * Architectural Pattern: Finite State Machine (FSM)
+ *
+ * This plugin uses an FSM to manage all core business logic and ensure
+ * data integrity. Do not bypass the FSM.
+ *
+ * -   To change an object's state, apply a transition.
+ * -   To perform a CRUD action, tie it to a transition's side-effect.
+ *
+ * Your primary task is to read, understand, and extend the existing
+ * FSM definition when adding or modifying functionality.
+ * ========================================================================
+ */
+
 // Prevent direct access
 defined( 'ABSPATH' ) || exit;
 

@@ -30,12 +30,12 @@ class StateManager {
     /**
      * Cache expiration time (5 minutes).
      */
-    private const CACHE_EXPIRATION = 5 * MINUTE_IN_SECONDS;
+    private const CACHE_EXPIRATION = 5 * 60; // 5 minutes in seconds
 
     /**
      * Event log transient TTL (1 day) and max entries per repo.
      */
-    private const EVENT_LOG_TTL = DAY_IN_SECONDS;
+    private const EVENT_LOG_TTL = 24 * 60 * 60; // 1 day in seconds
     private const EVENT_LOG_LIMIT = 30;
 
     /**
@@ -117,7 +117,7 @@ class StateManager {
      */
     private function log_event(string $repository, string $event, array $data = []): void {
         $key = 'sbi_state_events_' . md5($repository);
-        $events = get_transient($key);
+        $events = \get_transient($key);
         if (!is_array($events)) { $events = []; }
         $events[] = [
             't' => time(),
@@ -128,7 +128,7 @@ class StateManager {
         if (count($events) > self::EVENT_LOG_LIMIT) {
             $events = array_slice($events, -self::EVENT_LOG_LIMIT);
         }
-        set_transient($key, $events, self::EVENT_LOG_TTL);
+        \set_transient($key, $events, self::EVENT_LOG_TTL);
     }
 
     /**
@@ -138,10 +138,10 @@ class StateManager {
     public function acquire_processing_lock(string $repository, int $ttl_seconds = 60): bool {
         $key = 'sbi_lock_' . md5($repository);
         // Attempt to add; add_option will fail if option exists. Use transients for TTL.
-        if (false !== get_transient($key)) {
+        if (false !== \get_transient($key)) {
             return false; // already locked
         }
-        set_transient($key, 1, $ttl_seconds);
+        \set_transient($key, 1, $ttl_seconds);
         $this->log_event($repository, 'lock_acquired', [ 'ttl' => $ttl_seconds ]);
         return true;
     }
@@ -151,7 +151,7 @@ class StateManager {
      */
     public function release_processing_lock(string $repository): void {
         $key = 'sbi_lock_' . md5($repository);
-        delete_transient($key);
+        \delete_transient($key);
         $this->log_event($repository, 'lock_released');
     }
 
@@ -162,7 +162,7 @@ class StateManager {
      */
     public function get_events(string $repository, int $limit = 10): array {
         $key = 'sbi_state_events_' . md5($repository);
-        $events = get_transient($key);
+        $events = \get_transient($key);
         if (!is_array($events)) { return []; }
         return array_slice($events, -$limit);
     }
@@ -177,11 +177,11 @@ class StateManager {
         $this->log_event($repo, $event, $payload);
 
         // Append to global broadcast queue (ring buffer)
-        $last_id = (int) get_option('sbi_broadcast_last_id', 0);
+        $last_id = (int) \get_option('sbi_broadcast_last_id', 0);
         $id = $last_id + 1;
-        update_option('sbi_broadcast_last_id', $id, false);
+        \update_option('sbi_broadcast_last_id', $id, false);
 
-        $queue = get_transient('sbi_broadcast_events');
+        $queue = \get_transient('sbi_broadcast_events');
         if (!is_array($queue)) { $queue = []; }
         $queue[] = [
             'id' => $id,
@@ -193,7 +193,7 @@ class StateManager {
         if (count($queue) > 100) {
             $queue = array_slice($queue, -100);
         }
-        set_transient('sbi_broadcast_events', $queue, self::EVENT_LOG_TTL);
+        \set_transient('sbi_broadcast_events', $queue, self::EVENT_LOG_TTL);
     }
 
     /**
@@ -203,7 +203,7 @@ class StateManager {
      * @return array<int, array{ id:int, event:string, payload:array, ts:int }>
      */
     public function get_broadcast_events_since(int $last_id): array {
-        $queue = get_transient('sbi_broadcast_events');
+        $queue = \get_transient('sbi_broadcast_events');
         if (!is_array($queue)) { return []; }
         return array_values(array_filter($queue, static function($e) use ($last_id) {
             return isset($e['id']) && (int)$e['id'] > $last_id;
@@ -501,7 +501,7 @@ class StateManager {
      * Load cached states from WordPress transients.
      */
     private function load_cached_states(): void {
-        $cached_states = get_transient( 'sbi_plugin_states' );
+        $cached_states = \get_transient( 'sbi_plugin_states' );
 
         if ( is_array( $cached_states ) ) {
             foreach ( $cached_states as $repository => $state_value ) {
@@ -525,7 +525,7 @@ class StateManager {
             $states_for_cache[ $repository ] = $state->value;
         }
 
-        set_transient( 'sbi_plugin_states', $states_for_cache, self::CACHE_EXPIRATION );
+        \set_transient( 'sbi_plugin_states', $states_for_cache, self::CACHE_EXPIRATION );
     }
 
     /**
@@ -533,7 +533,7 @@ class StateManager {
      */
     public function clear_cache(): void {
         $this->states = [];
-        delete_transient( 'sbi_plugin_states' );
+        \delete_transient( 'sbi_plugin_states' );
     }
 
     /**
@@ -546,10 +546,10 @@ class StateManager {
         unset( $this->states[ $repository_full_name ] );
 
         // Update persistent cache
-        $cached_states = get_transient( 'sbi_plugin_states' );
+        $cached_states = \get_transient( 'sbi_plugin_states' );
         if ( is_array( $cached_states ) && isset( $cached_states[ $repository_full_name ] ) ) {
             unset( $cached_states[ $repository_full_name ] );
-            set_transient( 'sbi_plugin_states', $cached_states, self::CACHE_EXPIRATION );
+            \set_transient( 'sbi_plugin_states', $cached_states, self::CACHE_EXPIRATION );
         }
     }
 
