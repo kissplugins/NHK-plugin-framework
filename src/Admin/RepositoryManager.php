@@ -584,6 +584,25 @@ class RepositoryManager {
                             <p class="description">
                                 <?php esc_html_e( 'Enable this to show a detailed debug panel that logs all AJAX requests, responses, and errors in real-time.', 'kiss-smart-batch-installer' ); ?>
                                 <br><strong><?php esc_html_e( 'Developer Tool:', 'kiss-smart-batch-installer' ); ?></strong>
+                        <tr>
+                            <th scope="row">
+                                <label for="sbi_sse_diagnostics"><?php esc_html_e( 'Enable SSE Diagnostics (Experimental)', 'kiss-smart-batch-installer' ); ?></label>
+                            </th>
+                            <td>
+                                <?php $sse_diag = get_option( 'sbi_sse_diagnostics', false ); ?>
+                                <label>
+                                    <input type="checkbox"
+                                           id="sbi_sse_diagnostics"
+                                           name="sbi_sse_diagnostics"
+                                           value="1"
+                                           <?php checked( $sse_diag ); ?> />
+                                    <?php esc_html_e( 'Enable Server-Sent Events (SSE) diagnostics stream (admin only)', 'kiss-smart-batch-installer' ); ?>
+                                </label>
+                                <p class="description">
+                                    <?php esc_html_e( 'Experimental: Streams state_changed events to the browser for real-time diagnostics. Disable if you experience admin page performance issues.', 'kiss-smart-batch-installer' ); ?>
+                                </p>
+                            </td>
+                        </tr>
                                 <?php esc_html_e( 'Useful for troubleshooting AJAX issues and monitoring system performance.', 'kiss-smart-batch-installer' ); ?>
                             </p>
                         </td>
