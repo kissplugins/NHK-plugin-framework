@@ -60,7 +60,7 @@ This is a living, canonical checklist that drives the FSM-first implementation. 
 *Goal: Quick wins that reinforce SSoT without large refactors (recommended to do next).*
 
 * [x] Add a minimal processing lock in `StateManager` and apply it in `AjaxHandler` install/activate/deactivate paths.
-* [ ] Introduce a lightweight frontend RepositoryFSM façade (TS) to apply state→UI mapping for row updates returned by `sbi_refresh_repository`.
+* [x] Introduce a lightweight frontend RepositoryFSM façade (TS) to apply state→UI mapping for row updates returned by `sbi_refresh_repository`.
 * [ ] Add `broadcast()` stub and document the SSE endpoint contract; no UI listener yet.
 
 ### **Phase 3: Implement State Broadcasting & Finalize Integration**

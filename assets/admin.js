@@ -547,6 +547,15 @@
                     $($row).replaceWith(resp.data.row_html);
                 }
             } catch(_){}
+
+            // Wire frontend FSM mirror for improved debug/reactivity
+            try {
+                if (window.SBIts && window.SBIts.repositoryFSM && resp.data && resp.data.state) {
+                    var st = resp.data.state;
+                    window.SBIts.repositoryFSM.set(repository, st);
+                    window.SBIts.repositoryFSM.applyToRow(repository, st);
+                }
+            } catch(_){}
         })
         .fail(function(){
             SBI.showMessage('Refresh request failed', 'error');
