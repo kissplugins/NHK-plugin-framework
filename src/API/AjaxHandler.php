@@ -1067,8 +1067,13 @@ class AjaxHandler {
                 echo 'data: ' . wp_json_encode($evt['payload']) . "\n\n";
                 @flush();
             }
+            if ( connection_aborted() ) { break; }
             // Sleep briefly to avoid tight loop
             usleep(300000); // 300ms
+        }
+        // end of stream cycle; client reconnects automatically
+        exit;
+    }
 
     /**
      * Trigger a harmless transition to validate SSE pipeline.
@@ -1084,22 +1089,6 @@ class AjaxHandler {
         $this->state_manager->transition($repo, PluginState::CHECKING, [ 'source' => 'sse_test' ]);
         $this->state_manager->transition($repo, $from, [ 'source' => 'sse_test_restore' ]);
         wp_send_json_success([ 'repository' => $repo, 'message' => 'SSE test transitions emitted' ]);
-    }
-
-            if ( connection_aborted() ) { break; }
-        }
-        // end of stream cycle; client reconnects automatically
-        exit;
-    }
-
-        // For now, return mock progress data
-
-        wp_send_json_success( [
-            'progress' => 75,
-            'current_step' => __( 'Installing plugin dependencies...', 'kiss-smart-batch-installer' ),
-            'completed' => 3,
-            'total' => 4,
-        ] );
     }
 
     /**

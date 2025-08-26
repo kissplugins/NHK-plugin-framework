@@ -830,6 +830,22 @@ class SelfTestsPage {
             global $wp_scripts;
 
             $required_scripts = [ 'sbi-admin' ];
+
+        // Test 5: StateManager helpers for install/active/file
+        $tests[] = $this->run_test('FSM Helpers – isInstalled/isActive/getInstalledPluginFile', function() {
+            $org = get_option('sbi_github_organization', 'kissplugins');
+            $repo = $org . '/SelfTest-Helpers';
+            // These checks are tolerant even if plugin is not actually present
+            $file = $this->state_manager->getInstalledPluginFile($repo);
+            $installed = $this->state_manager->isInstalled($repo);
+            $active = $this->state_manager->isActive($repo);
+            // No hard assertion on presence; only type/shape assertions
+            if (!is_string($file)) throw new \Exception('getInstalledPluginFile should return string');
+            if (!is_bool($installed)) throw new \Exception('isInstalled should return bool');
+            if (!is_bool($active)) throw new \Exception('isActive should return bool');
+            return 'FSM helper methods executed (file=' . ($file ?: 'none') . ', installed=' . ($installed?'true':'false') . ', active=' . ($active?'true':'false') . ')';
+        });
+
             $registered_scripts = [];
 
             foreach ( $required_scripts as $script ) {

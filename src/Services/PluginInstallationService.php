@@ -11,6 +11,7 @@ use WP_Error;
 use Plugin_Upgrader;
 use WP_Upgrader_Skin;
 
+use SBI\Services\StateManager;
 // Include WordPress upgrader and plugin management classes
 if ( ! class_exists( 'WP_Upgrader' ) ) {
     require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
@@ -37,6 +38,9 @@ class PluginInstallationService {
      * @var GitHubService
      */
     private GitHubService $github_service;
+    /** @var StateManager */
+    private StateManager $state_manager;
+
 
     /**
      * Progress callback function.
@@ -50,8 +54,9 @@ class PluginInstallationService {
      *
      * @param GitHubService $github_service GitHub service instance.
      */
-    public function __construct( GitHubService $github_service ) {
+    public function __construct( GitHubService $github_service, StateManager $state_manager ) {
         $this->github_service = $github_service;
+        $this->state_manager = $state_manager;
     }
 
     /**
@@ -109,6 +114,17 @@ class PluginInstallationService {
         error_log( 'SBI INSTALL SERVICE: Getting repository information from GitHub' );
         $repo_info = $this->github_service->get_repository( $owner, $repo );
         if ( is_wp_error( $repo_info ) ) {
+    /**
+     * Guess repository full name from a plugin file path using the directory as slug.
+     */
+    private function guess_repo_from_plugin_file(string $plugin_file): string {
+        $dir = dirname($plugin_file);
+        $slug = basename($dir);
+        // Prefer an organization option if available
+        $org = get_option('sbi_github_organization', '');
+        return $org ? ($org . '/' . $slug) : $slug;
+    }
+
             error_log( sprintf( 'SBI INSTALL SERVICE: Failed to get repository info: %s', $repo_info->get_error_message() ) );
             $this->send_progress( 'Repository Verification', 'error', 'Repository not found or inaccessible' );
             return $repo_info;
@@ -314,7 +330,11 @@ class PluginInstallationService {
             return new WP_Error( 'insufficient_permissions', __( 'You do not have permission to activate plugins.', 'kiss-smart-batch-installer' ) );
         }
 
-        // Check if plugin is already active (keep runtime check for safety)
+        // Check if plugin is already active (FSM-aware + runtime)
+        $repo_guess = $this->guess_repo_from_plugin_file($plugin_file);
+        if ( $repo_guess && $this->state_manager->isActive($repo_guess) ) {
+            return new WP_Error( 'already_active', __( 'Plugin is already active.', 'kiss-smart-batch-installer' ) );
+        }
         if ( function_exists('is_plugin_active') && is_plugin_active( $plugin_file ) ) {
             return new WP_Error( 'already_active', __( 'Plugin is already active.', 'kiss-smart-batch-installer' ) );
         }
@@ -349,7 +369,11 @@ class PluginInstallationService {
             return new WP_Error( 'insufficient_permissions', __( 'You do not have permission to deactivate plugins.', 'kiss-smart-batch-installer' ) );
         }
 
-        // Check if plugin is active (keep runtime check for safety)
+        // Check if plugin is active (FSM-aware + runtime)
+        $repo_guess = $this->guess_repo_from_plugin_file($plugin_file);
+        if ( $repo_guess && ! $this->state_manager->isActive($repo_guess) ) {
+            return new WP_Error( 'not_active', __( 'Plugin is not active.', 'kiss-smart-batch-installer' ) );
+        }
         if ( function_exists('is_plugin_active') && ! is_plugin_active( $plugin_file ) ) {
             return new WP_Error( 'not_active', __( 'Plugin is not active.', 'kiss-smart-batch-installer' ) );
         }

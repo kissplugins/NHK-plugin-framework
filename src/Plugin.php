@@ -42,9 +42,12 @@ class Plugin extends BasePlugin {
             $this->container->singleton(GitHubService::class);
             $this->container->singleton(PluginDetectionService::class);
 
-            // Register PluginInstallationService with GitHubService dependency
+            // Register PluginInstallationService with GitHubService + StateManager dependency
             $this->container->singleton(PluginInstallationService::class, function($container) {
-                return new PluginInstallationService($container->get(GitHubService::class));
+                return new PluginInstallationService(
+                    $container->get(GitHubService::class),
+                    $container->get(StateManager::class)
+                );
             });
 
             // Register StateManager with PQSIntegration + Detection dependency (FSM SSoT)

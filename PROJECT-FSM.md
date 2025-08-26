@@ -59,7 +59,8 @@ This is a living, canonical checklist that drives the FSM-first implementation. 
 
 * [ ] **Task: Refactor Installation Service 🔧**
     * **File**: `src/Services/PluginInstallationService.php`
-    * **Action**: Refactor the `install_plugin` method to be stateless. It should no longer return success/failure arrays. Instead, it must call `transition()` to move the repository into `INSTALLING`, `INSTALLED_INACTIVE`, or `ERROR` states.
+    * **Action**: Use StateManager helpers for isInstalled/isActive/getInstalledPluginFile to reduce direct WP checks and unify logic. Keep runtime checks where necessary for safety.
+    * **Action (follow-up)**: Refactor the `install_plugin` method to be stateless; call `transition()` to move the repository into `INSTALLING`, `INSTALLED_INACTIVE`, or `ERROR` states.
 
 ### **Phase 2.5: Near-Term, High-Impact FSM Hardening**
 *Goal: Quick wins that reinforce SSoT without large refactors (recommended to do next).*
