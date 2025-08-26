@@ -212,6 +212,10 @@ class RepositoryManager {
         $debug_ajax = isset( $_POST['debug_ajax'] ) ? 1 : 0;
         update_option( 'sbi_debug_ajax', $debug_ajax );
 
+        // SSE diagnostics toggle
+        $sse_diag = isset( $_POST['sbi_sse_diagnostics'] ) ? 1 : 0;
+        update_option( 'sbi_sse_diagnostics', $sse_diag );
+
         add_settings_error( 'sbi_messages', 'organization_saved', __( 'GitHub organization and settings saved successfully.', 'kiss-smart-batch-installer' ), 'success' );
     }
 

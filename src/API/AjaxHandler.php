@@ -1037,6 +1037,12 @@ class AjaxHandler {
             status_header(403);
             exit;
         }
+        // Feature toggle: require SSE diagnostics to be enabled
+        if ( ! get_option( 'sbi_sse_diagnostics', false ) ) {
+            status_header(403);
+            echo 'SSE diagnostics disabled';
+            exit;
+        }
 
         // Headers
         header('Content-Type: text/event-stream');
