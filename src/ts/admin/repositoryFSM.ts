@@ -22,7 +22,8 @@ export class RepositoryFSM {
   set(repo: RepoId, state: PluginState): void {
     const prev = this.states.get(repo);
     this.states.set(repo, state);
-    if (process.env.NODE_ENV !== 'production') {
+    // Always enable debug logging in development (browser environment)
+    if (true) {
       try {
         // Preserve/improve debug output
         const msg = `[RepositoryFSM] ${repo}: ${prev ?? '∅'} -> ${state}`;

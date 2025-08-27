@@ -6,8 +6,22 @@
 
 This is a living, canonical checklist that drives the FSM-first implementation. Follow this order to transition to a fully FSM-centric architecture.
 
+## 🚨 **CRITICAL PATH - IMMEDIATE PRIORITY**
+
+**BLOCKING ISSUE:** TypeScript builds are broken due to missing `@types/node`, preventing all frontend FSM development.
+
+**Required Actions (In Order):**
+1. ✅ **Fix TypeScript builds** - Removed `process.env` usage, builds now working
+2. **Connect frontend to SSE** - Implement EventSource consumption of existing `sbi_state_stream` endpoint
+3. **Remove ad-hoc UI flags** - Eliminate legacy `isLoading`, `processingQueue` variables
+
+**Dependency Chain:** TypeScript builds → Frontend SSE → Real-time UI updates
+
+***
+
 ### **Phase 1: Implement Frontend State Mirror & Decouple UI**
 *Goal: Establish the FSM pattern on the frontend and remove ad-hoc state flags to fix progressive loading bugs and UI drift.*
+**Status: 🚀 READY - TypeScript builds fixed, frontend development unblocked**
 
 * [ ] **Task: Create JavaScript FSM Class**
     * Implement the `RepositoryStateMachine` class in JavaScript/TypeScript, mirroring the backend FSM's states and transitions.
@@ -31,6 +45,7 @@ This is a living, canonical checklist that drives the FSM-first implementation. 
 
 ### **Phase 2: Centralize Backend State Management**
 *Goal: Make the PHP `StateManager` the undisputed source of truth by absorbing disparate state logic and removing legacy paths.*
+**Status: ✅ LARGELY COMPLETE - Core FSM infrastructure implemented**
 
 * [ ] **Task: Implement Processing State Lock Mechanism 🔐**
 * [x] **Task: Implement Processing State Lock Mechanism 🔐**
@@ -65,6 +80,7 @@ This is a living, canonical checklist that drives the FSM-first implementation. 
 
 ### **Phase 2.5: Near-Term, High-Impact FSM Hardening**
 *Goal: Quick wins that reinforce SSoT without large refactors (recommended to do next).*
+**Status: ✅ COMPLETE - Processing locks, frontend FSM, and broadcasting implemented**
 
 * [x] Add a minimal processing lock in `StateManager` and apply it in `AjaxHandler` install/activate/deactivate paths.
 * [x] Introduce a lightweight frontend RepositoryFSM façade (TS) to apply state→UI mapping for row updates returned by `sbi_refresh_repository`.
@@ -72,6 +88,7 @@ This is a living, canonical checklist that drives the FSM-first implementation. 
 
 ### **Phase 3: Implement State Broadcasting & Finalize Integration**
 *Goal: Complete the event-driven architecture so the system is reactive and robust.*
+**Status: 🚀 READY - Backend complete, TypeScript builds fixed, ready for frontend SSE integration**
 
 * [ ] **Task: Implement State Change Broadcasting in PHP 📡**
     * Add the `addListener` and `broadcast` methods to `StateManager.php`.

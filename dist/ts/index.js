@@ -6,6 +6,7 @@ export { PluginState, isInstalled, isPluginByState } from './types/fsm';
 export { wpAjaxFetch } from './lib/ajaxClient';
 export { mapResponseToError, mapExceptionToError } from './lib/errors';
 export { installPlugin, activatePlugin, deactivatePlugin, refreshStatus } from './admin/handlers';
+export { repositoryFSM, RepositoryFSM } from './admin/repositoryFSM';
 // Smoke test to ensure bundling works when later integrated
 export function tsScaffoldHello() {
     const hasAjax = typeof window !== 'undefined' && !!window.sbiAjax;
