@@ -12,6 +12,7 @@ use Plugin_Upgrader;
 use WP_Upgrader_Skin;
 
 use SBI\Services\StateManager;
+use SBI\Enums\PluginState;
 // Include WordPress upgrader and plugin management classes
 if ( ! class_exists( 'WP_Upgrader' ) ) {
     require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
@@ -96,14 +97,21 @@ class PluginInstallationService {
         // Do NOT remove these logs. If you must change them, keep equivalently rich context.
         error_log( sprintf( 'SBI INSTALL SERVICE: Starting install_plugin for %s/%s (branch: %s)', $owner, $repo, $branch ) );
 
+        $repository = $owner . '/' . $repo;
+
+        // FSM: Transition to INSTALLING state
+        $this->state_manager->transition( $repository, PluginState::INSTALLING, [ 'source' => 'install_plugin_start' ] );
+
         if ( empty( $owner ) || empty( $repo ) ) {
             error_log( 'SBI INSTALL SERVICE: Invalid parameters - owner or repo empty' );
+            $this->state_manager->transition( $repository, PluginState::ERROR, [ 'source' => 'install_plugin_invalid_params' ] );
             return new WP_Error( 'invalid_params', __( 'Owner and repository name are required.', 'kiss-smart-batch-installer' ) );
         }
 
         // Check if user has permission to install plugins
         if ( ! current_user_can( 'install_plugins' ) ) {
             error_log( 'SBI INSTALL SERVICE: Insufficient permissions for current user' );
+            $this->state_manager->transition( $repository, PluginState::ERROR, [ 'source' => 'install_plugin_insufficient_permissions' ] );
             return new WP_Error( 'insufficient_permissions', __( 'You do not have permission to install plugins.', 'kiss-smart-batch-installer' ) );
         }
 
@@ -114,10 +122,9 @@ class PluginInstallationService {
         error_log( 'SBI INSTALL SERVICE: Getting repository information from GitHub' );
         $repo_info = $this->github_service->get_repository( $owner, $repo );
         if ( is_wp_error( $repo_info ) ) {
-
-
             error_log( sprintf( 'SBI INSTALL SERVICE: Failed to get repository info: %s', $repo_info->get_error_message() ) );
             $this->send_progress( 'Repository Verification', 'error', 'Repository not found or inaccessible' );
+            $this->state_manager->transition( $repository, PluginState::ERROR, [ 'source' => 'install_plugin_repo_not_found' ] );
             return $repo_info;
         }
 
@@ -259,6 +266,7 @@ class PluginInstallationService {
         if ( is_wp_error( $result ) ) {
             $this->send_progress( 'Plugin Installation', 'error', 'Installation failed: ' . $result->get_error_message() );
             error_log( sprintf( 'SBI INSTALL SERVICE: Installation failed with WP_Error: %s', $result->get_error_message() ) );
+            $this->state_manager->transition( $repository, PluginState::ERROR, [ 'source' => 'install_plugin_wp_error', 'error' => $result->get_error_message() ] );
             return $result;
         }
 
@@ -267,6 +275,7 @@ class PluginInstallationService {
             $this->send_progress( 'Plugin Installation', 'error', 'Installation failed - see debug log for details' );
             error_log( 'SBI INSTALL SERVICE: Installation failed - upgrader returned false' );
             error_log( sprintf( 'SBI INSTALL SERVICE: Upgrader messages: %s', implode( '; ', $messages ) ) );
+            $this->state_manager->transition( $repository, PluginState::ERROR, [ 'source' => 'install_plugin_failed', 'messages' => $messages ] );
             return new WP_Error(
                 'installation_failed',
                 __( 'Plugin installation failed.', 'kiss-smart-batch-installer' ),
@@ -289,6 +298,7 @@ class PluginInstallationService {
             error_log( 'SBI INSTALL SERVICE: Plugin file could not be determined' );
             $messages = $skin->get_messages();
             error_log( sprintf( 'SBI INSTALL SERVICE: Upgrader messages: %s', implode( '; ', $messages ) ) );
+            $this->state_manager->transition( $repository, PluginState::ERROR, [ 'source' => 'install_plugin_file_not_found', 'messages' => $messages ] );
             return new WP_Error( 'plugin_file_not_found', __( 'Plugin was installed but plugin file could not be determined.', 'kiss-smart-batch-installer' ) );
         }
 
@@ -296,6 +306,12 @@ class PluginInstallationService {
         error_log( sprintf( 'SBI INSTALL SERVICE: Installation completed successfully for %s/%s', $owner, $repo ) );
         error_log( sprintf( 'SBI INSTALL SERVICE: Plugin file: %s', $plugin_file ) );
         error_log( sprintf( 'SBI INSTALL SERVICE: Messages: %s', implode( '; ', $messages ) ) );
+
+        // FSM: Transition to INSTALLED_INACTIVE state (plugin installed but not activated)
+        $this->state_manager->transition( $repository, PluginState::INSTALLED_INACTIVE, [
+            'source' => 'install_plugin_success',
+            'plugin_file' => $plugin_file
+        ] );
 
         return [
             'success' => true,

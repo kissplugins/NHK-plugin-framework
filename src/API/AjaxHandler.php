@@ -663,9 +663,7 @@ class AjaxHandler {
 
             $this->send_progress_update( 'Plugin Installation', 'success', "Successfully installed {$owner}/{$repo_name}" );
 
-            // FSM: set final installed state based on activation
-            $final_state = ( ! empty( $result['activated'] ) ) ? PluginState::INSTALLED_ACTIVE : PluginState::INSTALLED_INACTIVE;
-            $this->state_manager->transition( sprintf('%s/%s', $owner, $repo_name), $final_state, [ 'source' => 'ajax_install' ] );
+            // Note: FSM transitions are now handled directly by PluginInstallationService
 
             error_log( sprintf( 'SBI INSTALL: Installation successful for %s/%s', $owner, $repo_name ) );
 

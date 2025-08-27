@@ -57,10 +57,11 @@ This is a living, canonical checklist that drives the FSM-first implementation. 
     * RepositoryListTable now uses StateManager::detect_plugin_info and reads state via StateManager exclusively
     * AjaxHandler callers updated to use StateManager wrappers and to avoid direct WP state checks for installed states
 
-* [ ] **Task: Refactor Installation Service 🔧**
+* [x] **Task: Refactor Installation Service 🔧**
     * **File**: `src/Services/PluginInstallationService.php`
     * **Action**: Use StateManager helpers for isInstalled/isActive/getInstalledPluginFile to reduce direct WP checks and unify logic. Keep runtime checks where necessary for safety.
     * **Action (follow-up)**: Refactor the `install_plugin` method to be stateless; call `transition()` to move the repository into `INSTALLING`, `INSTALLED_INACTIVE`, or `ERROR` states.
+    * **Status**: ✅ COMPLETED - install_plugin now drives FSM transitions directly; removed duplicate transitions from AjaxHandler
 
 ### **Phase 2.5: Near-Term, High-Impact FSM Hardening**
 *Goal: Quick wins that reinforce SSoT without large refactors (recommended to do next).*
