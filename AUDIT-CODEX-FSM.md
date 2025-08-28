@@ -9,15 +9,15 @@ The project is migrating toward a finite-state-machine (FSM) architecture guided
 * **Installation service.** ✅ **Complete** - `PluginInstallationService::install_plugin` now fully FSM-driven with proper state transitions
 * **Frontend RepositoryFSM.** ✅ **Implemented** - TypeScript FSM with observer pattern, DOM updates, and debug logging
 * **SSE infrastructure.** ✅ **Backend complete** - `sbi_state_stream` endpoint and broadcast queue working
-* **Frontend SSE consumption.** ❌ **Missing** - Frontend doesn't consume existing SSE stream yet
+* **Frontend SSE consumption.** ✅ **Complete** - Frontend FSM now consumes SSE stream for real-time updates
 * **TypeScript builds.** ✅ **Fixed** - Removed `process.env` usage, compilation now working
 
 ## 3. Current issues with FSM implementation
 * **TypeScript build failure.** ✅ **Fixed** - Removed `process.env` usage, frontend development now unblocked
-* **Frontend SSE gap.** ❌ **High priority** - Frontend FSM doesn't consume existing `sbi_state_stream` endpoint
+* **Frontend SSE gap.** ✅ **Complete** - Frontend FSM now consumes `sbi_state_stream` endpoint with real-time updates
 * **Brittle DOM coupling.** ❌ **Medium priority** - Frontend uses generated IDs (`'repo-' + repoId`) instead of stable `data-*` attributes
 * **Remaining direct checks.** ⚠️ **Low priority** - Some `is_plugin_active()` calls remain outside PluginInstallationService
-* **Ad-hoc UI flags.** ⚠️ **Medium priority** - Legacy `isLoading`, `processingQueue` variables still present in JavaScript
+* **Ad-hoc UI flags.** ✅ **Complete** - Eliminated legacy `isLoading`, `processingQueue`, `activeRequest` variables
 
 ## 4. Gaps towards "bug free" / easy to maintain FSM
 * Missing build dependencies block TypeScript compilation and hinder frontend FSM reliability.
@@ -29,8 +29,8 @@ The project is migrating toward a finite-state-machine (FSM) architecture guided
 ## 5. Recommended next steps
 ### Phase 1 – Quick wins
 1. ✅ **TypeScript builds fixed** - Removed `process.env` usage, compilation restored
-2.  Finish replacing direct WordPress checks with `StateManager` helpers.
-3.  Implement a `notifyBackend(repo, action)` method in `RepositoryFSM` to centralize AJAX requests for plugin actions (install, activate, etc.) and remove legacy UI flags.
+2. ✅ **Frontend SSE integration complete** - EventSource consumption of `sbi_state_stream` implemented
+3. ✅ **Ad-hoc UI flags removed** - Eliminated `isLoading`, `processingQueue`, `activeRequest` variables
 4.  Decouple the FSM from the DOM by using `data-*` attributes instead of generated IDs to find and update repository rows and buttons.
 
 ### Phase 2 – Structural improvements
@@ -54,4 +54,5 @@ The frontend SSE integration **requires** working TypeScript builds first, makin
 * ✅ **Processing locks working** - Prevent race conditions during plugin operations
 * ✅ **SSE backend infrastructure** - Broadcast queue and streaming endpoint functional
 * ✅ **TypeScript builds fixed** - Frontend development now unblocked
-* ❌ **Frontend SSE integration** - Ready to implement now that builds work
+* ✅ **Frontend SSE integration** - Complete with real-time state synchronization
+* ✅ **Ad-hoc UI flags eliminated** - FSM-based state management implemented

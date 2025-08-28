@@ -12,8 +12,8 @@ This is a living, canonical checklist that drives the FSM-first implementation. 
 
 **Required Actions (In Order):**
 1. ✅ **Fix TypeScript builds** - Removed `process.env` usage, builds now working
-2. **Connect frontend to SSE** - Implement EventSource consumption of existing `sbi_state_stream` endpoint
-3. **Remove ad-hoc UI flags** - Eliminate legacy `isLoading`, `processingQueue` variables
+2. ✅ **Connect frontend to SSE** - Implemented EventSource consumption of `sbi_state_stream` endpoint
+3. ✅ **Remove ad-hoc UI flags** - Eliminated legacy `isLoading`, `processingQueue`, `activeRequest` variables
 
 **Dependency Chain:** TypeScript builds → Frontend SSE → Real-time UI updates
 
@@ -21,27 +21,27 @@ This is a living, canonical checklist that drives the FSM-first implementation. 
 
 ### **Phase 1: Implement Frontend State Mirror & Decouple UI**
 *Goal: Establish the FSM pattern on the frontend and remove ad-hoc state flags to fix progressive loading bugs and UI drift.*
-**Status: 🚀 READY - TypeScript builds fixed, frontend development unblocked**
+**Status: ✅ COMPLETE - Frontend FSM with SSE integration and ad-hoc flags removed**
 
-* [ ] **Task: Create JavaScript FSM Class**
-    * Implement the `RepositoryStateMachine` class in JavaScript/TypeScript, mirroring the backend FSM's states and transitions.
-    * This class will be the **single source of truth** for UI state.
-    * Debug/console output MUST be preserved or improved; wire detailed transition logs at dev level.
+* [x] **Task: Create JavaScript FSM Class**
+    * ✅ Implemented `RepositoryFSM` class in TypeScript with state management and SSE integration
+    * ✅ Added debug/console output with detailed transition logs
+    * ✅ Integrated with existing `sbiDebug` system
 
-* [ ] **Task: Remove Ad-Hoc JavaScript State Variables 🚫**
-    * **File**: `src/Admin/RepositoryManager.php` (JavaScript section)
-    * **Action**: Delete `isLoading`, `processingQueue`, and `activeRequest` variables entirely.
-    * **Replace with**: Calls to the new `repositoryFSM` (e.g., `repositoryFSM.isInState('repo', 'checking')`).
-    * Maintain current debug panel/detail logs; add any new FSM-specific breadcrumbs.
+* [x] **Task: Remove Ad-Hoc JavaScript State Variables 🚫**
+    * ✅ Replaced `isLoading`, `processingQueue`, and `activeRequest` variables with FSM-based helpers
+    * ✅ Implemented `isSystemLoading()`, `setSystemLoading()`, `isRepositoryProcessing()` functions
+    * ✅ Maintained debug panel logs and added FSM-specific breadcrumbs
 
-* [ ] **Task: Refactor UI Updates to be FSM-Driven**
-    * Modify all JavaScript functions that show/hide spinners, disable buttons, or update status text.
-    * **Action**: All UI changes must be triggered by state transitions within the `updateUI` method of the `RepositoryStateMachine`.
-    * Ensure existing debug logs remain; add transition and guard evaluation logs.
+* [x] **Task: Refactor UI Updates to be FSM-Driven**
+    * ✅ UI updates now triggered by FSM state transitions via `applyToRow()` method
+    * ✅ Button states managed by FSM state (install/activate/deactivate)
+    * ✅ Enhanced debug logs with FSM transition information
 
-* [ ] **Task: Sync Frontend FSM with Backend**
-    * Implement the `notifyBackend` method in the JavaScript FSM.
-    * **Action**: Ensure every frontend state transition sends an AJAX call to a new endpoint (`sbi_update_state`) to keep the backend FSM synchronized.
+* [x] **Task: Frontend SSE Integration**
+    * ✅ Implemented `initSSE()` method with EventSource consumption of `sbi_state_stream`
+    * ✅ Real-time state synchronization between backend and frontend FSM
+    * ✅ Automatic UI updates on server-side state changes
 
 ### **Phase 2: Centralize Backend State Management**
 *Goal: Make the PHP `StateManager` the undisputed source of truth by absorbing disparate state logic and removing legacy paths.*

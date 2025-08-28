@@ -4,6 +4,7 @@ export var PluginState;
     PluginState["CHECKING"] = "checking";
     PluginState["AVAILABLE"] = "available";
     PluginState["NOT_PLUGIN"] = "not_plugin";
+    PluginState["INSTALLING"] = "installing";
     PluginState["INSTALLED_INACTIVE"] = "installed_inactive";
     PluginState["INSTALLED_ACTIVE"] = "installed_active";
     PluginState["ERROR"] = "error";

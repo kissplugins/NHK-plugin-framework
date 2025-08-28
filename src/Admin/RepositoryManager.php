@@ -894,14 +894,76 @@ class RepositoryManager {
             // AJAX nonce
             var ajaxNonce = '<?php echo wp_create_nonce( 'sbi_ajax_nonce' ); ?>';
 
-            // Progressive loading variables
+            // Progressive loading variables (FSM-driven)
             var repositories = [];
             var currentIndex = 0;
             var totalRepositories = 0;
-            var isLoading = false;
-            var processingQueue = false;
-            var activeRequest = null;
             var repositoryLimit = 0;
+
+            // Initialize FSM for state management
+            var fsm = null;
+            try {
+                if (window.SBIts && window.SBIts.repositoryFSM) {
+                    fsm = window.SBIts.repositoryFSM;
+                    // Initialize SSE connection for real-time updates
+                    fsm.initSSE(window);
+                    debugLog('✅ FSM initialized with SSE support');
+                } else {
+                    debugLog('⚠️ FSM not available, falling back to legacy state management');
+                }
+            } catch(e) {
+                debugLog('❌ FSM initialization failed: ' + e.message, 'error');
+            }
+
+            // FSM-based state management helpers
+            function isSystemLoading() {
+                // Check if any repository is in CHECKING state (system-wide loading)
+                if (fsm) {
+                    // Check if we have any repositories in loading states
+                    for (var i = 0; i < repositories.length; i++) {
+                        var repo = repositories[i];
+                        if (fsm.isInAnyState(repo.full_name, ['checking', 'installing'])) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+                // Fallback: use a simple flag
+                return window.sbiSystemLoading || false;
+            }
+
+            function setSystemLoading(loading) {
+                if (fsm) {
+                    // FSM manages state automatically through transitions
+                    debugLog(loading ? '🔄 System loading started' : '✅ System loading completed');
+                } else {
+                    // Fallback: use a simple flag
+                    window.sbiSystemLoading = loading;
+                }
+            }
+
+            function isRepositoryProcessing(repoFullName) {
+                if (fsm) {
+                    return fsm.isInAnyState(repoFullName, ['checking', 'installing']);
+                }
+                // Fallback: check if there's an active request for this repo
+                return window.sbiActiveRequests && window.sbiActiveRequests[repoFullName];
+            }
+
+            function setRepositoryProcessing(repoFullName, processing) {
+                if (fsm) {
+                    // FSM manages state automatically through transitions
+                    debugLog((processing ? '🔄' : '✅') + ' Repository ' + repoFullName + ' processing: ' + processing);
+                } else {
+                    // Fallback: track active requests
+                    window.sbiActiveRequests = window.sbiActiveRequests || {};
+                    if (processing) {
+                        window.sbiActiveRequests[repoFullName] = true;
+                    } else {
+                        delete window.sbiActiveRequests[repoFullName];
+                    }
+                }
+            }
 
             // Debug functions (only if debug is enabled)
             var debugEnabled = <?php echo get_option( 'sbi_debug_ajax', false ) ? 'true' : 'false'; ?>;
@@ -988,11 +1050,12 @@ class RepositoryManager {
             }
 
             function startProgressiveLoading(org) {
-                if (isLoading) {
+                // Check if already loading using FSM or fallback
+                if (isSystemLoading()) {
                     debugLog('⏸️ Already loading, skipping', 'warning');
                     return;
                 }
-                isLoading = true;
+                setSystemLoading(true);
 
                 debugLog('🚀 Starting progressive loading for organization: ' + org);
                 $('#sbi-initial-loading').show();
@@ -1034,13 +1097,9 @@ class RepositoryManager {
                         $('#sbi-repository-form').show();
                         $('#sbi-loading-progress').show();
 
-                        // Cancel any existing requests and reset state
-                        if (activeRequest) {
-                            debugLog('🛑 Aborting existing request');
-                            activeRequest.abort();
-                            activeRequest = null;
-                        }
-                        processingQueue = false;
+                        // Reset system state
+                        setSystemLoading(false);
+                        debugLog('🛑 Reset system state for new loading cycle');
 
                         // Start processing repositories one by one (truly sequential)
                         currentIndex = 0;
@@ -1062,9 +1121,9 @@ class RepositoryManager {
             }
 
             function processNextRepository() {
-                // Prevent multiple simultaneous processing - be very strict
-                if (processingQueue || activeRequest !== null) {
-                    debugLog('⏸️ Skipping processNextRepository - already processing', 'warning');
+                // Prevent multiple simultaneous processing using FSM state
+                if (isSystemLoading()) {
+                    debugLog('⏸️ Skipping processNextRepository - system already processing', 'warning');
                     return;
                 }
 
@@ -1073,13 +1132,11 @@ class RepositoryManager {
                     debugLog('🎉 All repositories processed successfully', 'success');
                     $('#sbi-loading-progress').hide();
                     updateItemCount();
-                    isLoading = false;
-                    processingQueue = false;
-                    activeRequest = null;
+                    setSystemLoading(false);
                     return;
                 }
 
-                processingQueue = true;
+                setRepositoryProcessing(repositories[currentIndex].full_name, true);
                 var repo = repositories[currentIndex];
                 var progress = Math.round(((currentIndex + 1) / totalRepositories) * 100);
 
@@ -1101,16 +1158,15 @@ class RepositoryManager {
 
                 debugAjaxCall('sbi_process_repository', requestData, 'Process repository: ' + repo.name);
 
-                activeRequest = $.post(ajaxurl, requestData)
+                $.post(ajaxurl, requestData)
                 .done(function(response) {
                     debugAjaxResponse(response, 'Process repository: ' + repo.name);
-                    // Processing request has completed; clear handle now
-                    activeRequest = null;
+                    // Processing request has completed
+                    setRepositoryProcessing(repo.full_name, false);
 
                     var advanceAfter = function(delayMs) {
                         // Move to the next repository only after optional render completes
                         debugLog('🏁 Finished processing repository: ' + repo.full_name);
-                        processingQueue = false;
                         currentIndex++;
                         var ms = delayMs || 5000;
                         debugLog('⏳ Waiting ' + (ms/1000) + ' seconds before next repository...');
@@ -1137,8 +1193,8 @@ class RepositoryManager {
                 })
                 .fail(function(xhr, status, error) {
                     debugAjaxFail(xhr, status, error, 'Process repository: ' + repo.name);
-                    // Processing request failed; clear handle now
-                    activeRequest = null;
+                    // Processing request failed
+                    setRepositoryProcessing(repo.full_name, false);
 
                     var errorMsg = 'Request failed';
                     if (status === 'timeout') {
@@ -1151,7 +1207,6 @@ class RepositoryManager {
 
                     // Advance after failure without waiting for render
                     debugLog('🏁 Finished processing repository: ' + repo.full_name);
-                    processingQueue = false;
                     currentIndex++;
                     debugLog('⏳ Waiting 5 seconds before next repository...');
                     setTimeout(function() { processNextRepository(); }, 5000);
@@ -1239,7 +1294,7 @@ class RepositoryManager {
                 $('#sbi-initial-loading').hide();
                 $('#sbi-repository-form').show();
                 $('#sbi-repository-tbody').html('<tr><td colspan="5" style="text-align: center; padding: 40px;">No repositories found for this organization.</td></tr>');
-                isLoading = false;
+                setSystemLoading(false);
             }
 
             function showError(message) {
@@ -1257,7 +1312,7 @@ class RepositoryManager {
 
                 var errorDiv = $('<div class="notice notice-error">' + errorHtml + '</div>');
                 $('.sbi-repository-list h2').after(errorDiv);
-                isLoading = false;
+                setSystemLoading(false);
             }
 
             function updateItemCount() {

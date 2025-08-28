@@ -3,6 +3,7 @@ export enum PluginState {
   CHECKING = 'checking',
   AVAILABLE = 'available',
   NOT_PLUGIN = 'not_plugin',
+  INSTALLING = 'installing',
   INSTALLED_INACTIVE = 'installed_inactive',
   INSTALLED_ACTIVE = 'installed_active',
   ERROR = 'error',
