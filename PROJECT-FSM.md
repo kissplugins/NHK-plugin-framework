@@ -34,21 +34,21 @@ This document tracks the FSM-first implementation progress and guides future dev
 **Status**: 🔴 **NOT STARTED** - Critical gap identified in audit
 **Goal**: Ensure FSM reliability through comprehensive test coverage
 
-* [ ] **Task: FSM Transition Testing**
+* [x] **Task: FSM Transition Testing**
     * **Action**: Create automated tests validating allowed/blocked state transitions
     * **Coverage**: Test all transition rules defined in `StateManager::init_transitions()`
     * **Integration**: Validate broadcast queue and event logging systems
-    * **Framework**: Use existing WordPress test framework or PHPUnit
+    * **Implemented**: Added comprehensive FSM validation tests to SelfTestsPage.php
 
-* [ ] **Task: Error Handling Validation**
+* [x] **Task: Error Handling Validation**
     * **Action**: Test error recovery mechanisms and retry logic
     * **Coverage**: Validate error context persistence and recovery flows
-    * **Edge Cases**: Test max retry scenarios and non-recoverable errors
+    * **Implemented**: Added error state recovery and enhanced error handling tests
 
-* [ ] **Task: SSE Integration Testing**
+* [x] **Task: SSE Integration Testing**
     * **Action**: Validate real-time frontend-backend synchronization
     * **Coverage**: Test EventSource connection, reconnection, and event parsing
-    * **Performance**: Validate SSE performance under load
+    * **Implemented**: Added SSE integration validation test with broadcast verification
 
 ### **Priority 2: Code Quality & Maintainability**
 **Status**: 🟡 **PARTIALLY COMPLETE** - Some cleanup needed

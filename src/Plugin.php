@@ -16,6 +16,7 @@ use SBI\Services\PluginInstallationService;
 use SBI\Admin\RepositoryManager;
 use SBI\Admin\SelfTestsPage;
 use SBI\API\AjaxHandler;
+use Exception;
 
 /**
  * Plugin class coordinating all components.
@@ -28,8 +29,8 @@ class Plugin extends BasePlugin {
         $this->version      = GBI_VERSION;
         $this->text_domain  = 'kiss-smart-batch-installer';
         $this->plugin_file  = GBI_FILE;
-        $this->plugin_path  = plugin_dir_path($this->plugin_file);
-        $this->plugin_url   = plugin_dir_url($this->plugin_file);
+        $this->plugin_path  = \plugin_dir_path($this->plugin_file);
+        $this->plugin_url   = \plugin_dir_url($this->plugin_file);
     }
 
     /**
