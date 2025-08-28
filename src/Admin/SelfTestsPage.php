@@ -691,6 +691,10 @@ class SelfTestsPage {
             }
 
             return 'Data consistency maintained across multiple processing attempts';
+        });
+
+        return $tests;
+    }
 
     /**
      * Test FSM processing lock behavior.
@@ -787,10 +791,6 @@ class SelfTestsPage {
             }
             if (!$found) { throw new \Exception('No state_changed event for target repo in broadcast queue'); }
             return 'Broadcast event emitted and visible via get_broadcast_events_since';
-        });
-
-    }
-
         });
 
         return $tests;
