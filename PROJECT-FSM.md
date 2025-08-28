@@ -54,10 +54,11 @@ This document tracks the FSM-first implementation progress and guides future dev
 **Status**: 🟡 **PARTIALLY COMPLETE** - Some cleanup needed
 **Goal**: Ensure long-term maintainability and prevent regressions
 
-* [ ] **Task: Deprecate Legacy Methods**
+* [x] **Task: Deprecate Legacy Methods**
     * **Action**: Add `@deprecated` tags to non-FSM state methods
     * **Documentation**: Clear migration paths for deprecated functions
-    * **Timeline**: Gradual phase-out over 2-3 releases
+    * **Created**: docs/DEPRECATION-GUIDE.md with comprehensive migration guide
+    * **Added**: Deprecation warnings to key methods and class headers
 
 * [ ] **Task: Enhanced Documentation**
     * **Action**: Document FSM architecture patterns and best practices

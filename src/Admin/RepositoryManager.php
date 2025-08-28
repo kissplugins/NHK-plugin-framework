@@ -3,6 +3,11 @@
  * Repository Manager admin page.
  *
  * @package SBI\Admin
+ *
+ * IMPORTANT: This class uses FSM-first architecture. For plugin state management:
+ * - Use StateManager methods instead of direct WordPress functions
+ * - Use RepositoryFSM for frontend state management
+ * - See docs/DEPRECATION-GUIDE.md for migration patterns
  */
 
 namespace SBI\Admin;
@@ -891,6 +896,11 @@ class RepositoryManager {
         ?>
         <script type="text/javascript">
         jQuery(document).ready(function($) {
+            // IMPORTANT: This JavaScript uses FSM-first patterns
+            // - Use RepositoryFSM for state management instead of ad-hoc variables
+            // - Use data-repository attributes for DOM targeting
+            // - See docs/DEPRECATION-GUIDE.md for migration patterns
+
             // AJAX nonce
             var ajaxNonce = '<?php echo wp_create_nonce( 'sbi_ajax_nonce' ); ?>';
 

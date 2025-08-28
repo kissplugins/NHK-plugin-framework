@@ -440,6 +440,8 @@ class RepositoryListTable extends WP_List_Table {
     }
 
     /**
+     * @deprecated 1.0.31 Unused legacy method. Use StateManager methods for plugin identification.
+     *
      * Normalize strings for robust slug comparisons.
      */
     private function normalize_slug_str(string $s): string {
@@ -448,7 +450,11 @@ class RepositoryListTable extends WP_List_Table {
     }
 
     /**
-     * Deprecated: Use StateManager::getInstalledPluginFile instead.
+     * @deprecated 1.0.31 Use StateManager::getInstalledPluginFile instead.
+     * @see StateManager::getInstalledPluginFile()
+     *
+     * This method bypasses the FSM and should not be used in new code.
+     * The StateManager provides FSM-aware plugin file resolution.
      */
     private function find_installed_plugin( string $plugin_slug ): string {
         $repo = $this->organization ? $this->organization . '/' . $plugin_slug : $plugin_slug;

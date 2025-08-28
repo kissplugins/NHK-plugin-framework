@@ -51,6 +51,12 @@ class PluginDetectionService {
     /**
      * Detect if a repository contains a WordPress plugin.
      *
+     * @deprecated 1.0.31 Use StateManager::detect_plugin_info() instead for FSM-aware detection.
+     * @see StateManager::detect_plugin_info()
+     *
+     * Direct usage bypasses FSM state management and caching. The StateManager
+     * provides a centralized, cached, and FSM-aware wrapper around this service.
+     *
      * @param array $repository Repository data from GitHubService.
      * @param bool  $force_refresh Whether to bypass cache.
      * @return array|WP_Error Plugin detection result or WP_Error on failure.
