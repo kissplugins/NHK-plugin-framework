@@ -338,12 +338,16 @@ class PluginInstallationService {
             return new WP_Error( 'insufficient_permissions', __( 'You do not have permission to activate plugins.', 'kiss-smart-batch-installer' ) );
         }
 
-        // Check if plugin is already active (FSM-aware + runtime)
+        // Check if plugin is already active (FSM-first with runtime fallback)
         $repo_guess = $this->guess_repo_from_plugin_file($plugin_file);
+
+        // Primary check: Use FSM if we can identify the repository
         if ( $repo_guess && $this->state_manager->isActive($repo_guess) ) {
             return new WP_Error( 'already_active', __( 'Plugin is already active.', 'kiss-smart-batch-installer' ) );
         }
-        if ( function_exists('is_plugin_active') && is_plugin_active( $plugin_file ) ) {
+
+        // Fallback: Direct WordPress check only if FSM check wasn't possible
+        if ( ! $repo_guess && function_exists('is_plugin_active') && is_plugin_active( $plugin_file ) ) {
             return new WP_Error( 'already_active', __( 'Plugin is already active.', 'kiss-smart-batch-installer' ) );
         }
 
@@ -377,12 +381,16 @@ class PluginInstallationService {
             return new WP_Error( 'insufficient_permissions', __( 'You do not have permission to deactivate plugins.', 'kiss-smart-batch-installer' ) );
         }
 
-        // Check if plugin is active (FSM-aware + runtime)
+        // Check if plugin is active (FSM-first with runtime fallback)
         $repo_guess = $this->guess_repo_from_plugin_file($plugin_file);
+
+        // Primary check: Use FSM if we can identify the repository
         if ( $repo_guess && ! $this->state_manager->isActive($repo_guess) ) {
             return new WP_Error( 'not_active', __( 'Plugin is not active.', 'kiss-smart-batch-installer' ) );
         }
-        if ( function_exists('is_plugin_active') && ! is_plugin_active( $plugin_file ) ) {
+
+        // Fallback: Direct WordPress check only if FSM check wasn't possible
+        if ( ! $repo_guess && function_exists('is_plugin_active') && ! is_plugin_active( $plugin_file ) ) {
             return new WP_Error( 'not_active', __( 'Plugin is not active.', 'kiss-smart-batch-installer' ) );
         }
 

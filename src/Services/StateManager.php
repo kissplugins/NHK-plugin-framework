@@ -96,6 +96,13 @@ class StateManager {
             }
         }
 
+        // Enhanced error state handling
+        if ($to_state === PluginState::ERROR) {
+            $this->handle_error_transition($repository, $context);
+        } elseif ($from_state === PluginState::ERROR->value && $to_state !== PluginState::ERROR) {
+            $this->handle_error_recovery($repository, $to_state, $context);
+        }
+
         $this->set_state($repository, $to_state);
         $this->log_event($repository, 'transition', [
             'from' => $from_state,
@@ -110,6 +117,106 @@ class StateManager {
             'context' => $context,
             'ts' => time(),
         ]);
+    }
+
+    /**
+     * Handle transition to ERROR state with enhanced context tracking.
+     */
+    private function handle_error_transition(string $repository, array $context): void {
+        $error_data = [
+            'timestamp' => time(),
+            'message' => $context['error'] ?? $context['message'] ?? 'Unknown error',
+            'source' => $context['source'] ?? 'unknown',
+            'recoverable' => $context['recoverable'] ?? true,
+            'retry_count' => $this->get_retry_count($repository),
+        ];
+
+        // Store error context for recovery
+        $this->store_error_context($repository, $error_data);
+
+        // Log detailed error information
+        $this->log_event($repository, 'error_occurred', $error_data);
+
+        error_log(sprintf(
+            'SBI FSM ERROR: %s - %s (source: %s, recoverable: %s)',
+            $repository,
+            $error_data['message'],
+            $error_data['source'],
+            $error_data['recoverable'] ? 'yes' : 'no'
+        ));
+    }
+
+    /**
+     * Handle recovery from ERROR state.
+     */
+    private function handle_error_recovery(string $repository, PluginState $to_state, array $context): void {
+        $error_context = $this->get_error_context($repository);
+
+        $recovery_data = [
+            'timestamp' => time(),
+            'recovered_to' => $to_state->value,
+            'recovery_source' => $context['source'] ?? 'unknown',
+            'previous_error' => $error_context['message'] ?? 'unknown',
+            'retry_count' => $error_context['retry_count'] ?? 0,
+        ];
+
+        // Log successful recovery
+        $this->log_event($repository, 'error_recovered', $recovery_data);
+
+        // Clear error context on successful recovery
+        $this->clear_error_context($repository);
+
+        error_log(sprintf(
+            'SBI FSM RECOVERY: %s recovered to %s (was: %s)',
+            $repository,
+            $to_state->value,
+            $error_context['message'] ?? 'unknown error'
+        ));
+    }
+
+    /**
+     * Store error context for a repository.
+     */
+    private function store_error_context(string $repository, array $error_data): void {
+        $key = 'sbi_error_context_' . md5($repository);
+        set_transient($key, $error_data, self::EVENT_LOG_TTL);
+    }
+
+    /**
+     * Get error context for a repository.
+     */
+    private function get_error_context(string $repository): array {
+        $key = 'sbi_error_context_' . md5($repository);
+        $context = get_transient($key);
+        return is_array($context) ? $context : [];
+    }
+
+    /**
+     * Clear error context for a repository.
+     */
+    private function clear_error_context(string $repository): void {
+        $key = 'sbi_error_context_' . md5($repository);
+        delete_transient($key);
+    }
+
+    /**
+     * Get retry count for a repository.
+     */
+    private function get_retry_count(string $repository): int {
+        $error_context = $this->get_error_context($repository);
+        return $error_context['retry_count'] ?? 0;
+    }
+
+    /**
+     * Increment retry count for a repository.
+     */
+    public function increment_retry_count(string $repository): int {
+        $error_context = $this->get_error_context($repository);
+        $retry_count = ($error_context['retry_count'] ?? 0) + 1;
+        $error_context['retry_count'] = $retry_count;
+        $error_context['last_retry_at'] = time();
+        $this->store_error_context($repository, $error_context);
+        return $retry_count;
     }
 
     /**

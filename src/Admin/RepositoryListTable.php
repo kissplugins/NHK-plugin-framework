@@ -470,6 +470,34 @@ class RepositoryListTable extends WP_List_Table {
     }
 
     /**
+     * Override single_row to add data attributes for FSM DOM targeting.
+     *
+     * @param array $item Repository item data.
+     */
+    public function single_row( $item ): void {
+        $row_id = 'repo-' . sanitize_html_class( $item['full_name'] );
+
+        // Extract owner from full_name
+        $owner = '';
+        if ( isset( $item['full_name'] ) && strpos( $item['full_name'], '/' ) !== false ) {
+            $owner = explode( '/', $item['full_name'] )[0];
+        }
+
+        printf(
+            '<tr id="%s" data-repository="%s" data-repo-name="%s" data-repo-owner="%s" data-repo-state="%s">',
+            esc_attr( $row_id ),
+            esc_attr( $item['full_name'] ),
+            esc_attr( $item['name'] ),
+            esc_attr( $owner ),
+            esc_attr( $item['installation_state']->value ?? 'unknown' )
+        );
+
+        $this->single_row_columns( $item );
+
+        echo '</tr>';
+    }
+
+    /**
      * Render a single repository row for progressive loading.
      *
      * @param array $item Repository item data.
@@ -493,7 +521,11 @@ class RepositoryListTable extends WP_List_Table {
 
         ob_start();
         ?>
-        <tr id="<?php echo esc_attr( $row_id ); ?>" class="sbi-loading-row">
+        <tr id="<?php echo esc_attr( $row_id ); ?>"
+            class="sbi-loading-row"
+            data-repository="<?php echo esc_attr( $repository['full_name'] ); ?>"
+            data-repo-name="<?php echo esc_attr( $repository['name'] ); ?>"
+            data-repo-owner="<?php echo esc_attr( explode('/', $repository['full_name'])[0] ?? '' ); ?>">
             <?php foreach ( $columns as $column_name => $column_display_name ): ?>
                 <td class="<?php echo esc_attr( $column_name ); ?> column-<?php echo esc_attr( $column_name ); ?>">
                     <?php if ( $column_name === 'cb' ): ?>

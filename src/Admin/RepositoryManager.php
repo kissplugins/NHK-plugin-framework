@@ -1215,7 +1215,12 @@ class RepositoryManager {
 
             function addLoadingRow(repo) {
                 var rowId = 'repo-' + repo.full_name.replace(/[^a-zA-Z0-9]/g, '-');
-                var loadingRow = $('<tr>').attr('id', rowId).addClass('sbi-loading-row');
+                var loadingRow = $('<tr>')
+                    .attr('id', rowId)
+                    .addClass('sbi-loading-row')
+                    .attr('data-repository', repo.full_name)
+                    .attr('data-repo-name', repo.name)
+                    .attr('data-repo-owner', repo.full_name.split('/')[0] || '');
 
                 // Add cells for each column
                 var columns = <?php echo json_encode( array_keys( $this->list_table->get_columns() ) ); ?>;
@@ -1242,9 +1247,10 @@ class RepositoryManager {
             }
 
             function replaceLoadingRow(repoFullName, processedRepo, isLast, listTotal, limitUsed) {
-                var rowId = 'repo-' + repoFullName.replace(/[^a-zA-Z0-9]/g, '-');
+                // Use data attribute for more resilient targeting
+                var targetRow = $('[data-repository="' + repoFullName + '"]');
 
-                debugLog('🔄 Replacing loading row for: ' + repoFullName + ' (ID: ' + rowId + ')');
+                debugLog('🔄 Replacing loading row for: ' + repoFullName + ' (found: ' + targetRow.length + ' rows)');
 
                 // Get the rendered row HTML
                 var requestData = {
@@ -1263,7 +1269,7 @@ class RepositoryManager {
                     debugAjaxResponse(response, 'Render row for: ' + repoFullName);
                     if (response.success) {
                         debugLog('✅ Successfully rendered row for: ' + repoFullName, 'success');
-                        $('#' + rowId).replaceWith(response.data.row_html);
+                        targetRow.replaceWith(response.data.row_html);
                         debugLog('🔄 Row replaced in DOM for: ' + repoFullName);
                         if (response.data && response.data.checksum) {
                             var cs = response.data.checksum;

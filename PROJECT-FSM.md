@@ -14,6 +14,9 @@ This is a living, canonical checklist that drives the FSM-first implementation. 
 1. ✅ **Fix TypeScript builds** - Removed `process.env` usage, builds now working
 2. ✅ **Connect frontend to SSE** - Implemented EventSource consumption of `sbi_state_stream` endpoint
 3. ✅ **Remove ad-hoc UI flags** - Eliminated legacy `isLoading`, `processingQueue`, `activeRequest` variables
+4. ✅ **DOM Decoupling** - Replaced generated IDs with `data-*` attributes for resilient targeting
+5. ✅ **Direct Check Elimination** - Minimized `is_plugin_active()` calls, prioritized FSM state checks
+6. ✅ **Enhanced Error Handling** - Added error context tracking, recovery mechanisms, and retry logic
 
 **Dependency Chain:** TypeScript builds → Frontend SSE → Real-time UI updates
 

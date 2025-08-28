@@ -6,11 +6,24 @@ type Listener = (repo: RepoId, state: PluginState) => void;
 
 type StateMap = Map<RepoId, PluginState>;
 
+// Error context for enhanced error handling
+interface ErrorContext {
+  timestamp: number;
+  message: string;
+  source: string;
+  retryCount: number;
+  lastRetryAt?: number;
+  recoverable: boolean;
+}
+
 export class RepositoryFSM {
   private states: StateMap = new Map();
   private listeners: Set<Listener> = new Set();
   private eventSource: EventSource | null = null;
   private sseEnabled = false;
+  private errorContexts: Map<RepoId, ErrorContext> = new Map();
+  private maxRetries = 3;
+  private retryDelayMs = 5000;
 
   onChange(listener: Listener): () => void {
     this.listeners.add(listener);
@@ -42,21 +55,32 @@ export class RepositoryFSM {
 
   // Apply state to DOM row: minimal façade that can evolve later
   applyToRow(repo: RepoId, state: PluginState): void {
-    const rowId = 'repo-' + repo.replace(/[^a-zA-Z0-9_-]/g, '-');
-    const row = document.getElementById(rowId);
-    if (!row) return;
+    // Use data-repository attribute for more resilient DOM targeting
+    const row = document.querySelector(`[data-repository="${repo}"]`) as HTMLTableRowElement | null;
+    if (!row) {
+      this.debugLog(`Row not found for repository: ${repo}`, 'error');
+      return;
+    }
 
-    // Minimal UX tweaks; full rendering is still server-driven via row_html
-    // Here we can disable/enable action buttons based on state
+    // Enhanced UX with error handling and recovery options
     const isInstalled = state === PluginState.INSTALLED_ACTIVE || state === PluginState.INSTALLED_INACTIVE;
+    const isError = state === PluginState.ERROR;
 
     const installBtn = row.querySelector('.sbi-install-plugin') as HTMLButtonElement | null;
     const activateBtn = row.querySelector('.sbi-activate-plugin') as HTMLButtonElement | null;
     const deactivateBtn = row.querySelector('.sbi-deactivate-plugin') as HTMLButtonElement | null;
 
-    if (installBtn) installBtn.disabled = isInstalled; // hide/disable install if installed
+    // Standard button state management
+    if (installBtn) installBtn.disabled = isInstalled || isError;
     if (activateBtn) activateBtn.disabled = state !== PluginState.INSTALLED_INACTIVE;
     if (deactivateBtn) deactivateBtn.disabled = state !== PluginState.INSTALLED_ACTIVE;
+
+    // Enhanced error state handling
+    if (isError) {
+      this.handleErrorState(row, repo);
+    } else {
+      this.clearErrorDisplay(row);
+    }
   }
 
   // SSE Integration Methods
@@ -148,10 +172,182 @@ export class RepositoryFSM {
     return this.get(repo) === state;
   }
 
+  // Enhanced Error Handling Methods
+
+  setError(repo: RepoId, message: string, source: string, recoverable: boolean = true): void {
+    const errorContext: ErrorContext = {
+      timestamp: Date.now(),
+      message,
+      source,
+      retryCount: 0,
+      recoverable,
+    };
+
+    this.errorContexts.set(repo, errorContext);
+    this.set(repo, PluginState.ERROR);
+    this.debugLog(`Error set for ${repo}: ${message} (source: ${source}, recoverable: ${recoverable})`, 'error');
+  }
+
+  getErrorContext(repo: RepoId): ErrorContext | null {
+    return this.errorContexts.get(repo) || null;
+  }
+
+  canRetry(repo: RepoId): boolean {
+    const errorContext = this.errorContexts.get(repo);
+    if (!errorContext || !errorContext.recoverable) return false;
+
+    return errorContext.retryCount < this.maxRetries;
+  }
+
+  async retryRepository(repo: RepoId): Promise<boolean> {
+    const errorContext = this.errorContexts.get(repo);
+    if (!errorContext || !this.canRetry(repo)) {
+      this.debugLog(`Cannot retry ${repo}: ${!errorContext ? 'no error context' : 'max retries exceeded'}`, 'error');
+      return false;
+    }
+
+    // Update retry context
+    errorContext.retryCount++;
+    errorContext.lastRetryAt = Date.now();
+    this.errorContexts.set(repo, errorContext);
+
+    this.debugLog(`Retrying ${repo} (attempt ${errorContext.retryCount}/${this.maxRetries})`);
+
+    try {
+      // Transition back to CHECKING state to restart the process
+      this.set(repo, PluginState.CHECKING);
+
+      // Trigger a refresh via the backend
+      if (typeof window !== 'undefined' && (window as any).sbiAjax) {
+        const response = await fetch((window as any).sbiAjax.ajaxurl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            action: 'sbi_refresh_repository',
+            repository: repo,
+            nonce: (window as any).sbiAjax.nonce,
+          }),
+        });
+
+        if (response.ok) {
+          this.debugLog(`Retry initiated for ${repo}`);
+          return true;
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+      }
+    } catch (error) {
+      this.debugLog(`Retry failed for ${repo}: ${error}`, 'error');
+      this.setError(repo, `Retry failed: ${error}`, 'retry_mechanism', errorContext.recoverable);
+    }
+
+    return false;
+  }
+
+  clearError(repo: RepoId): void {
+    this.errorContexts.delete(repo);
+    this.debugLog(`Error context cleared for ${repo}`);
+  }
+
+  getErrorStatistics(): { total: number; recoverable: number; maxRetriesReached: number } {
+    let total = 0;
+    let recoverable = 0;
+    let maxRetriesReached = 0;
+
+    for (const [repo, context] of this.errorContexts) {
+      total++;
+      if (context.recoverable) recoverable++;
+      if (context.retryCount >= this.maxRetries) maxRetriesReached++;
+    }
+
+    return { total, recoverable, maxRetriesReached };
+  }
+
   // Helper method to check if a repository is in any of the given states
   isInAnyState(repo: RepoId, states: PluginState[]): boolean {
     const currentState = this.get(repo);
     return currentState ? states.includes(currentState) : false;
+  }
+
+  // Error Display Management
+  private handleErrorState(row: HTMLTableRowElement, repo: RepoId): void {
+    const errorContext = this.getErrorContext(repo);
+    if (!errorContext) return;
+
+    // Find or create error display container
+    let errorContainer = row.querySelector('.sbi-error-display') as HTMLElement;
+    if (!errorContainer) {
+      errorContainer = document.createElement('div');
+      errorContainer.className = 'sbi-error-display';
+      errorContainer.style.cssText = 'background: #ffeaea; border: 1px solid #d63638; padding: 8px; margin: 4px 0; border-radius: 3px; font-size: 12px;';
+
+      // Insert after the first cell
+      const firstCell = row.querySelector('td');
+      if (firstCell) {
+        firstCell.appendChild(errorContainer);
+      }
+    }
+
+    // Build error message with context
+    const timeAgo = this.formatTimeAgo(errorContext.timestamp);
+    let errorHtml = `<strong>Error:</strong> ${errorContext.message}<br>`;
+    errorHtml += `<small>Source: ${errorContext.source} • ${timeAgo}</small>`;
+
+    if (errorContext.retryCount > 0) {
+      errorHtml += `<br><small>Retries: ${errorContext.retryCount}/${this.maxRetries}</small>`;
+    }
+
+    // Add retry button if recoverable
+    if (errorContext.recoverable && this.canRetry(repo)) {
+      errorHtml += `<br><button class="button button-small sbi-retry-btn" data-repo="${repo}" style="margin-top: 4px;">Retry</button>`;
+    } else if (!errorContext.recoverable) {
+      errorHtml += `<br><small style="color: #d63638;">Non-recoverable error</small>`;
+    } else {
+      errorHtml += `<br><small style="color: #d63638;">Max retries reached</small>`;
+    }
+
+    errorContainer.innerHTML = errorHtml;
+
+    // Attach retry handler
+    const retryBtn = errorContainer.querySelector('.sbi-retry-btn') as HTMLButtonElement;
+    if (retryBtn) {
+      retryBtn.onclick = () => this.handleRetryClick(repo, retryBtn);
+    }
+  }
+
+  private clearErrorDisplay(row: HTMLTableRowElement): void {
+    const errorContainer = row.querySelector('.sbi-error-display');
+    if (errorContainer) {
+      errorContainer.remove();
+    }
+  }
+
+  private async handleRetryClick(repo: RepoId, button: HTMLButtonElement): Promise<void> {
+    button.disabled = true;
+    button.textContent = 'Retrying...';
+
+    const success = await this.retryRepository(repo);
+
+    if (!success) {
+      button.disabled = false;
+      button.textContent = 'Retry Failed';
+      setTimeout(() => {
+        if (this.canRetry(repo)) {
+          button.textContent = 'Retry';
+          button.disabled = false;
+        }
+      }, 3000);
+    }
+    // If successful, the error display will be cleared by state change
+  }
+
+  private formatTimeAgo(timestamp: number): string {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ago`;
   }
 }
 

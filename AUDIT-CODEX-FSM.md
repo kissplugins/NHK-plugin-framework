@@ -15,9 +15,10 @@ The project is migrating toward a finite-state-machine (FSM) architecture guided
 ## 3. Current issues with FSM implementation
 * **TypeScript build failure.** ✅ **Fixed** - Removed `process.env` usage, frontend development now unblocked
 * **Frontend SSE gap.** ✅ **Complete** - Frontend FSM now consumes `sbi_state_stream` endpoint with real-time updates
-* **Brittle DOM coupling.** ❌ **Medium priority** - Frontend uses generated IDs (`'repo-' + repoId`) instead of stable `data-*` attributes
-* **Remaining direct checks.** ⚠️ **Low priority** - Some `is_plugin_active()` calls remain outside PluginInstallationService
+* **Brittle DOM coupling.** ✅ **Complete** - Replaced generated IDs with `data-repository` attributes for resilient targeting
+* **Remaining direct checks.** ✅ **Complete** - Minimized `is_plugin_active()` calls, FSM-first approach implemented
 * **Ad-hoc UI flags.** ✅ **Complete** - Eliminated legacy `isLoading`, `processingQueue`, `activeRequest` variables
+* **Error handling.** ✅ **Enhanced** - Added error context tracking, recovery mechanisms, and retry logic
 
 ## 4. Gaps towards "bug free" / easy to maintain FSM
 * Missing build dependencies block TypeScript compilation and hinder frontend FSM reliability.
