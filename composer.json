@@ -1,0 +1,12 @@
+{
+    "name": "nhk/poc",
+    "description": "NHK Proof of Concept WordPress plugin framework",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "autoload": {
+        "psr-4": {
+            "NHK\\Poc\\": "src/"
+        }
+    },
+    "require": {}
+}
