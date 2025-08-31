@@ -46,31 +46,58 @@ document.addEventListener('alpine:init', () => {
         
         init() {
             console.log('🎬 Initializing Event List component');
-            
-            // Create state machine service
-            this.service = createEventListService({
-                layout: this.config.layout,
-                pagination: {
-                    currentPage: 1,
-                    perPage: this.config.perPage,
-                    totalPages: 1,
-                    totalItems: 0
+
+            try {
+                // Check if required dependencies are available
+                if (typeof createEventListService !== 'function') {
+                    console.error('❌ createEventListService not available');
+                    this.hasError = true;
+                    this.error = 'State machine service not available';
+                    return;
                 }
-            });
-            
-            // Subscribe to state changes
-            this.service.subscribe((state) => {
-                this.updateFromState(state);
-            });
-            
-            // Start the service
-            this.service.start();
-            
-            // Load initial events
-            this.loadEvents();
-            
-            // Set up keyboard shortcuts
-            this.setupKeyboardShortcuts();
+
+                // Create state machine service
+                console.log('🔧 Creating event list service...');
+                this.service = createEventListService({
+                    layout: this.config.layout,
+                    pagination: {
+                        currentPage: 1,
+                        perPage: this.config.perPage,
+                        totalPages: 1,
+                        totalItems: 0
+                    }
+                });
+
+                if (!this.service) {
+                    console.error('❌ Failed to create event list service');
+                    this.hasError = true;
+                    this.error = 'Failed to create state machine service';
+                    return;
+                }
+
+                console.log('✅ Event list service created successfully');
+
+                // Subscribe to state changes
+                this.service.subscribe((state) => {
+                    console.log('🔄 State changed:', state.value);
+                    this.updateFromState(state);
+                });
+
+                // Start the service
+                this.service.start();
+                console.log('🚀 Event list service started');
+
+                // Load initial events
+                this.loadEvents();
+
+                // Set up keyboard shortcuts
+                this.setupKeyboardShortcuts();
+
+            } catch (error) {
+                console.error('❌ Error initializing Event List component:', error);
+                this.hasError = true;
+                this.error = error.message || 'Initialization failed';
+            }
         },
         
         destroy() {
@@ -133,10 +160,13 @@ document.addEventListener('alpine:init', () => {
         },
         
         // Search with debouncing
-        searchEvents: Alpine.debounce(function(searchTerm) {
+        searchEvents: window.debounce ? window.debounce(function(searchTerm) {
             this.filters.search = searchTerm;
             this.applyFilters();
-        }, 300),
+        }, 300) : function(searchTerm) {
+            this.filters.search = searchTerm;
+            this.applyFilters();
+        },
         
         // Layout management
         changeLayout(layout) {

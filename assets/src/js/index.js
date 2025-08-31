@@ -19,6 +19,7 @@ import './components/eventList.js';
 import './components/eventForm.js';
 import './components/eventStatus.js';
 import './components/eventFilters.js';
+import './components/debugPanel.js';
 
 // Initialize Alpine.js
 window.Alpine = Alpine;
@@ -34,26 +35,81 @@ window.nhkStateMachines = new Map();
  */
 function initNHKEventManager() {
     console.log('🚀 Initializing NHK Event Manager frontend...');
-    
+
+    // Track initialization start time
+    const initStartTime = performance.now();
+
     // Check if we have the necessary WordPress data
     if (typeof window.nhkEventManager === 'undefined') {
         console.warn('⚠️ NHK Event Manager data not found. Some features may not work.');
-        return;
+        // Still continue initialization for debugging
     }
-    
+
     // Set up global error handling
     setupErrorHandling();
-    
+
     // Initialize focus management for accessibility
     setupFocusManagement();
-    
+
     // Initialize keyboard shortcuts
     setupKeyboardShortcuts();
-    
+
+    // Test module imports
+    testModuleImports();
+
     // Start Alpine.js
     Alpine.start();
-    
-    console.log('✅ NHK Event Manager frontend initialized successfully');
+
+    // Track initialization completion
+    const initTime = performance.now() - initStartTime;
+    console.log(`✅ NHK Event Manager frontend initialized successfully in ${initTime.toFixed(2)}ms`);
+
+    // Dispatch initialization complete event
+    document.dispatchEvent(new CustomEvent('nhk:initialized', {
+        detail: { initTime, timestamp: new Date().toISOString() }
+    }));
+}
+
+/**
+ * Test module imports and availability
+ */
+function testModuleImports() {
+    console.group('🔍 Testing Module Imports');
+
+    // Test XState
+    try {
+        if (typeof interpret === 'function') {
+            console.log('✅ XState interpret function available');
+        } else {
+            console.error('❌ XState interpret function not available');
+        }
+    } catch (error) {
+        console.error('❌ XState import error:', error);
+    }
+
+    // Test state machines
+    try {
+        console.log('🔍 Testing state machine imports...');
+        console.log('eventListMachine:', typeof eventListMachine);
+        console.log('eventFormMachine:', typeof eventFormMachine);
+        console.log('eventStatusMachine:', typeof eventStatusMachine);
+    } catch (error) {
+        console.error('❌ State machine import error:', error);
+    }
+
+    // Test API client
+    try {
+        console.log('ApiClient:', typeof ApiClient);
+        console.log('window.nhkEventApi:', typeof window.nhkEventApi);
+    } catch (error) {
+        console.error('❌ API client error:', error);
+    }
+
+    // Test Alpine.js
+    console.log('Alpine.js:', typeof Alpine);
+    console.log('Alpine version:', Alpine.version || 'unknown');
+
+    console.groupEnd();
 }
 
 /**
@@ -62,17 +118,37 @@ function initNHKEventManager() {
 function setupErrorHandling() {
     window.addEventListener('error', (event) => {
         console.error('🚨 JavaScript Error:', event.error);
-        
+
+        // Dispatch error event for debug panel
+        document.dispatchEvent(new CustomEvent('nhk:error', {
+            detail: {
+                type: 'javascript',
+                message: event.message,
+                error: event.error,
+                filename: event.filename,
+                lineno: event.lineno,
+                colno: event.colno
+            }
+        }));
+
         // Send error to WordPress if debug mode is enabled
         if (window.nhkEventManager?.isDebug) {
-            // Could send to a logging endpoint
             console.log('Debug mode: Error logged locally');
         }
     });
-    
+
     window.addEventListener('unhandledrejection', (event) => {
         console.error('🚨 Unhandled Promise Rejection:', event.reason);
-        
+
+        // Dispatch error event for debug panel
+        document.dispatchEvent(new CustomEvent('nhk:error', {
+            detail: {
+                type: 'promise',
+                message: 'Unhandled Promise Rejection',
+                error: event.reason
+            }
+        }));
+
         // Prevent the default browser behavior
         event.preventDefault();
     });
@@ -122,18 +198,23 @@ function setupKeyboardShortcuts() {
  * Utility function to create and manage state machines
  */
 window.createStateMachine = function(machineConfig, context = {}) {
-    const machine = machineConfig.withContext(context);
-    const service = interpret(machine);
-    
+    // Create an actor from the machine (XState v5 compatible)
+    const service = interpret(machineConfig);
+
     // Store in global registry for debugging
     const id = `machine_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     window.nhkStateMachines.set(id, service);
-    
-    // Clean up when service stops
-    service.onStop(() => {
-        window.nhkStateMachines.delete(id);
+
+    // In XState v5 there is no onStop; use subscribe complete to detect stop and cleanup
+    const subscription = service.subscribe({
+        complete: () => {
+            window.nhkStateMachines.delete(id);
+        }
     });
-    
+
+    // Expose a tiny cleanup helper in case we ever need to unsubscribe manually
+    service.__nhkCleanup = () => subscription.unsubscribe?.();
+
     return service;
 };
 

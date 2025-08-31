@@ -82,6 +82,8 @@ class AssetManager {
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
         add_action('wp_head', [$this, 'add_preload_hints'], 1);
         add_action('wp_footer', [$this, 'add_critical_inline_scripts'], 1);
+        add_action('wp_footer', [$this, 'add_debug_panel'], 999);
+        add_action('admin_footer', [$this, 'add_debug_panel'], 999);
     }
     
     /**
@@ -116,7 +118,7 @@ class AssetManager {
             'apiUrl' => rest_url('nhk-events/v1'),
             'nonce' => wp_create_nonce('wp_rest'),
             'locale' => get_locale(),
-            'isDebug' => $this->is_dev_mode,
+            'isDebug' => true, // Enable debug mode temporarily to diagnose FSM issue
             'strings' => $this->get_localized_strings(),
             'config' => $this->get_frontend_config(),
         ]);
@@ -451,10 +453,58 @@ class AssetManager {
     
     /**
      * Check if ES modules should be used
-     * 
+     *
      * @return bool
      */
     protected function should_use_modules(): bool {
         return $this->is_dev_mode && !is_admin();
+    }
+
+    /**
+     * Add debug panel to footer
+     *
+     * @return void
+     */
+    public function add_debug_panel(): void {
+        // Only show debug panel if WP_DEBUG is enabled
+        if (!defined('WP_DEBUG') || !WP_DEBUG) {
+            return;
+        }
+
+        // Only show on pages where our assets are loaded
+        if (!$this->should_show_debug_panel()) {
+            return;
+        }
+
+        $template_path = NHK_EVENT_MANAGER_PATH . 'templates/debug-panel.php';
+        if (file_exists($template_path)) {
+            include $template_path;
+        }
+    }
+
+    /**
+     * Check if debug panel should be shown
+     *
+     * @return bool
+     */
+    protected function should_show_debug_panel(): bool {
+        // Show on admin pages where our assets are loaded
+        if (is_admin()) {
+            $hook = $_GET['page'] ?? '';
+            return strpos($hook, 'nhk-event') !== false;
+        }
+
+        // Show on frontend pages with our shortcodes or post types
+        if (is_singular('nhk_event')) {
+            return true;
+        }
+
+        // Check for shortcodes in content
+        global $post;
+        if ($post && has_shortcode($post->post_content, 'nhk_events')) {
+            return true;
+        }
+
+        return false;
     }
 }

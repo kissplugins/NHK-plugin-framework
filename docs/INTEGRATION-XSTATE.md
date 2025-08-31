@@ -237,7 +237,7 @@ states: {
             },
             validating: {
                 always: [
-                    { target: 'valid', cond: 'isFormValid' },
+                    { target: 'valid', guard: 'isFormValid' },
                     { target: 'invalid' }
                 ]
             },
@@ -646,7 +646,7 @@ const formMachine = createMachine({
         },
         validating: {
             always: [
-                { target: 'submitting', cond: 'isValid' },
+                { target: 'submitting', guard: 'isValid' },
                 { target: 'editing', actions: 'showErrors' }
             ]
         },

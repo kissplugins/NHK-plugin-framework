@@ -121,11 +121,23 @@ class DemoShortcode {
                 
                 <!-- Error State -->
                 <div x-show="hasError" class="notification-error">
-                    <p>⚠️ Demo Mode: This is a demonstration of the event list component.</p>
-                    <p class="mt-2">In a real implementation, this would load events from the WordPress database.</p>
-                    <button @click="loadDemoData()" class="btn-nhk-primary mt-3">
-                        Load Demo Data
-                    </button>
+                    <?php
+                    // Check if there are real events in the database
+                    $real_events_count = wp_count_posts('nhk_event');
+                    $has_real_events = ($real_events_count->publish ?? 0) > 0;
+
+                    if (!$has_real_events): ?>
+                        <p>⚠️ Demo Mode: This is a demonstration of the event list component.</p>
+                        <p class="mt-2">In a real implementation, this would load events from the WordPress database.</p>
+                        <button @click="loadDemoData()" class="btn-nhk-primary mt-3">
+                            Load Demo Data
+                        </button>
+                    <?php else: ?>
+                        <p>⚠️ Unable to load events. Please try again.</p>
+                        <button @click="retryLoad()" class="btn-nhk-primary mt-3">
+                            Retry Loading
+                        </button>
+                    <?php endif; ?>
                 </div>
                 
                 <!-- Filters Panel -->

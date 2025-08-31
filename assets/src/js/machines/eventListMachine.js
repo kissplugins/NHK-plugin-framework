@@ -137,7 +137,7 @@ export const eventListMachine = createMachine({
             always: [
                 {
                     target: 'loading',
-                    cond: 'shouldReloadFromServer'
+                    guard: 'shouldReloadFromServer'
                 },
                 {
                     target: 'loaded',
@@ -291,12 +291,7 @@ export const eventListMachine = createMachine({
  * Helper function to create an event list service
  */
 export function createEventListService(initialContext = {}) {
-    const machine = eventListMachine.withContext({
-        ...eventListMachine.context,
-        ...initialContext
-    });
-    
-    return window.createStateMachine(machine);
+    return window.createStateMachine(eventListMachine);
 }
 
 /**

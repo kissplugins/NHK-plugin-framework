@@ -42,6 +42,7 @@ class DemoPage {
      */
     public function init(): void {
         \add_action('admin_menu', [$this, 'add_admin_menu']);
+        \add_action('admin_notices', [$this, 'show_demo_notice']);
     }
     
     /**
@@ -68,6 +69,42 @@ class DemoPage {
             'nhk-event-demo',
             [$this, 'render_demo_page']
         );
+    }
+
+    /**
+     * Show demo notice on events list page
+     *
+     * @return void
+     */
+    public function show_demo_notice(): void {
+        $screen = \get_current_screen();
+
+        // Only show on events list page
+        if (!$screen || $screen->post_type !== 'nhk_event' || $screen->base !== 'edit') {
+            return;
+        }
+
+        // Check if there are real events
+        $real_events_count = \wp_count_posts('nhk_event');
+        $has_real_events = ($real_events_count->publish ?? 0) > 0;
+
+        // Only show notice if there are real events (hide demo notice)
+        if ($has_real_events) {
+            return;
+        }
+
+        // Show demo notice only when no real events exist
+        ?>
+        <div class="notice notice-info is-dismissible">
+            <p>
+                <strong><?php \_e('Demo Mode Active', 'nhk-event-manager'); ?></strong>
+                <?php \_e('This is a demonstration of the event list component. Import sample data or create real events to see the full functionality.', 'nhk-event-manager'); ?>
+                <a href="<?php echo \admin_url('edit.php?post_type=nhk_event&page=nhk-event-manager'); ?>" class="button button-primary" style="margin-left: 10px;">
+                    <?php \_e('Manage Sample Data', 'nhk-event-manager'); ?>
+                </a>
+            </p>
+        </div>
+        <?php
     }
     
     /**

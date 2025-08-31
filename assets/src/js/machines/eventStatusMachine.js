@@ -44,7 +44,7 @@ export const eventStatusMachine = createMachine({
                 COMPLETE: {
                     target: 'completed',
                     actions: 'recordStatusChange',
-                    cond: 'eventHasEnded'
+                    guard: 'eventHasEnded'
                 }
             }
         },
@@ -54,7 +54,7 @@ export const eventStatusMachine = createMachine({
                 REPUBLISH: {
                     target: 'published',
                     actions: 'recordStatusChange',
-                    cond: 'canRepublish'
+                    guard: 'canRepublish'
                 }
             }
         },

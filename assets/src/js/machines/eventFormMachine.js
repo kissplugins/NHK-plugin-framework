@@ -72,7 +72,7 @@ export const eventFormMachine = createMachine({
             always: [
                 {
                     target: 'submitting',
-                    cond: 'isFormValid'
+                    guard: 'isFormValid'
                 },
                 {
                     target: 'idle',

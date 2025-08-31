@@ -7,14 +7,24 @@
 
 class ApiClient {
     constructor() {
+        // Debug WordPress data availability
+        console.log('🔧 Initializing API Client...');
+        console.log('WordPress data:', window.nhkEventManager);
+
         this.baseUrl = window.nhkEventManager?.apiUrl || '/wp-json/nhk-events/v1';
         this.nonce = window.nhkEventManager?.nonce || '';
         this.isDebug = window.nhkEventManager?.isDebug || false;
-        
+
+        console.log('API Config:', {
+            baseUrl: this.baseUrl,
+            hasNonce: !!this.nonce,
+            isDebug: this.isDebug
+        });
+
         // Request interceptors
         this.requestInterceptors = [];
         this.responseInterceptors = [];
-        
+
         // Rate limiting
         this.requestQueue = [];
         this.isProcessingQueue = false;
@@ -162,8 +172,8 @@ class ApiClient {
      */
     async get(endpoint, params = {}) {
         const queryString = new URLSearchParams(params).toString();
-        const url = queryString ? `${endpoint}?${queryString}` : endpoint;
-        
+        const url = queryString ? `${this.baseUrl}${endpoint}?${queryString}` : `${this.baseUrl}${endpoint}`;
+
         return this.request(url, {
             method: 'GET'
         });
@@ -173,7 +183,7 @@ class ApiClient {
      * POST request helper
      */
     async post(endpoint, data = {}) {
-        return this.request(endpoint, {
+        return this.request(`${this.baseUrl}${endpoint}`, {
             method: 'POST',
             body: JSON.stringify(data)
         });
@@ -183,7 +193,7 @@ class ApiClient {
      * PUT request helper
      */
     async put(endpoint, data = {}) {
-        return this.request(endpoint, {
+        return this.request(`${this.baseUrl}${endpoint}`, {
             method: 'PUT',
             body: JSON.stringify(data)
         });
@@ -203,7 +213,7 @@ class ApiClient {
      * DELETE request helper
      */
     async delete(endpoint) {
-        return this.request(endpoint, {
+        return this.request(`${this.baseUrl}${endpoint}`, {
             method: 'DELETE'
         });
     }
