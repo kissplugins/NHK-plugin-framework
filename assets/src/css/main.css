@@ -1,0 +1,318 @@
+/**
+ * NHK Event Manager - Main Stylesheet
+ * 
+ * This file serves as the entry point for all CSS in the NHK Event Manager plugin.
+ * It includes Tailwind CSS utilities and custom component styles.
+ */
+
+/* Tailwind CSS Base Styles */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom Base Styles */
+@layer base {
+  /* Ensure consistent font rendering */
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* WordPress admin compatibility */
+  .wp-admin {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  }
+  
+  /* Focus styles for accessibility */
+  *:focus {
+    outline: 2px solid theme('colors.nhk-primary.500');
+    outline-offset: 2px;
+  }
+  
+  /* Remove focus outline for mouse users */
+  .js-focus-visible *:focus:not(.focus-visible) {
+    outline: none;
+  }
+}
+
+/* Custom Component Styles */
+@layer components {
+  /* Event Card Component */
+  .event-card {
+    @apply card-nhk hover:shadow-nhk-lg transition-shadow duration-300;
+  }
+  
+  .event-card-header {
+    @apply flex items-start justify-between mb-4;
+  }
+  
+  .event-card-title {
+    @apply text-xl font-semibold text-gray-900 mb-2;
+  }
+  
+  .event-card-date {
+    @apply text-sm font-medium text-nhk-primary-600 bg-nhk-primary-50 px-2 py-1 rounded;
+  }
+  
+  .event-card-content {
+    @apply text-gray-600 mb-4 line-clamp-3;
+  }
+  
+  .event-card-footer {
+    @apply flex items-center justify-between pt-4 border-t border-gray-200;
+  }
+  
+  .event-card-venue {
+    @apply text-sm text-gray-500 flex items-center;
+  }
+  
+  .event-card-capacity {
+    @apply text-sm text-gray-500 flex items-center;
+  }
+  
+  /* Event List Component */
+  .event-list {
+    @apply space-y-6;
+  }
+  
+  .event-list-item {
+    @apply flex flex-col md:flex-row md:items-center p-6 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300;
+  }
+  
+  .event-list-content {
+    @apply flex-1 md:mr-6;
+  }
+  
+  .event-list-meta {
+    @apply flex flex-col md:items-end md:text-right mt-4 md:mt-0;
+  }
+  
+  /* Event Grid Component */
+  .event-grid {
+    @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6;
+  }
+  
+  /* Event Table Component */
+  .event-table {
+    @apply w-full bg-white rounded-lg shadow-md overflow-hidden;
+  }
+  
+  .event-table th {
+    @apply px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+  }
+  
+  .event-table td {
+    @apply px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-b border-gray-200;
+  }
+  
+  .event-table tr:hover {
+    @apply bg-gray-50;
+  }
+  
+  /* Event Filter Component */
+  .event-filters {
+    @apply bg-white p-6 rounded-lg shadow-md mb-6;
+  }
+  
+  .event-filters-title {
+    @apply text-lg font-semibold text-gray-900 mb-4;
+  }
+  
+  .event-filters-grid {
+    @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4;
+  }
+  
+  .event-filter-group {
+    @apply space-y-2;
+  }
+  
+  .event-filter-label {
+    @apply block text-sm font-medium text-gray-700;
+  }
+  
+  .event-filter-input {
+    @apply input-nhk w-full;
+  }
+  
+  /* Event Status Badges */
+  .event-status {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .event-status-draft {
+    @apply bg-gray-100 text-gray-800;
+  }
+  
+  .event-status-pending {
+    @apply bg-nhk-warning-100 text-nhk-warning-800;
+  }
+  
+  .event-status-published {
+    @apply bg-nhk-success-100 text-nhk-success-800;
+  }
+  
+  .event-status-cancelled {
+    @apply bg-nhk-error-100 text-nhk-error-800;
+  }
+  
+  /* Loading States */
+  .loading-spinner {
+    @apply inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-nhk-primary-600;
+  }
+  
+  .loading-skeleton {
+    @apply animate-pulse bg-gray-200 rounded;
+  }
+  
+  .loading-text {
+    @apply loading-skeleton h-4 w-3/4 mb-2;
+  }
+  
+  .loading-title {
+    @apply loading-skeleton h-6 w-1/2 mb-4;
+  }
+  
+  /* Form Components */
+  .form-group {
+    @apply space-y-2;
+  }
+  
+  .form-label {
+    @apply block text-sm font-medium text-gray-700;
+  }
+  
+  .form-input {
+    @apply input-nhk;
+  }
+  
+  .form-textarea {
+    @apply input-nhk resize-vertical;
+  }
+  
+  .form-select {
+    @apply input-nhk;
+  }
+  
+  .form-checkbox {
+    @apply h-4 w-4 text-nhk-primary-600 focus:ring-nhk-primary-500 border-gray-300 rounded;
+  }
+  
+  .form-radio {
+    @apply h-4 w-4 text-nhk-primary-600 focus:ring-nhk-primary-500 border-gray-300;
+  }
+  
+  .form-error {
+    @apply text-sm text-nhk-error-600 mt-1;
+  }
+  
+  .form-help {
+    @apply text-sm text-gray-500 mt-1;
+  }
+  
+  /* Button Variants */
+  .btn-outline {
+    @apply border border-gray-300 bg-white text-gray-700 hover:bg-gray-50;
+  }
+  
+  .btn-ghost {
+    @apply bg-transparent text-gray-700 hover:bg-gray-100;
+  }
+  
+  .btn-link {
+    @apply bg-transparent text-nhk-primary-600 hover:text-nhk-primary-700 underline;
+  }
+  
+  /* Modal Components */
+  .modal-overlay {
+    @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50;
+  }
+  
+  .modal-content {
+    @apply bg-white rounded-lg shadow-xl max-w-md w-full max-h-screen overflow-y-auto;
+  }
+  
+  .modal-header {
+    @apply px-6 py-4 border-b border-gray-200;
+  }
+  
+  .modal-title {
+    @apply text-lg font-semibold text-gray-900;
+  }
+  
+  .modal-body {
+    @apply px-6 py-4;
+  }
+  
+  .modal-footer {
+    @apply px-6 py-4 border-t border-gray-200 flex justify-end space-x-3;
+  }
+  
+  /* Notification Components */
+  .notification {
+    @apply p-4 rounded-md mb-4;
+  }
+  
+  .notification-success {
+    @apply notification bg-nhk-success-50 border border-nhk-success-200 text-nhk-success-800;
+  }
+  
+  .notification-warning {
+    @apply notification bg-nhk-warning-50 border border-nhk-warning-200 text-nhk-warning-800;
+  }
+  
+  .notification-error {
+    @apply notification bg-nhk-error-50 border border-nhk-error-200 text-nhk-error-800;
+  }
+  
+  .notification-info {
+    @apply notification bg-nhk-primary-50 border border-nhk-primary-200 text-nhk-primary-800;
+  }
+}
+
+/* Custom Utility Classes */
+@layer utilities {
+  /* Text truncation utilities */
+  .line-clamp-1 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+  }
+  
+  .line-clamp-2 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  
+  .line-clamp-3 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+  
+  /* WordPress admin compatibility utilities */
+  .wp-admin-compat {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif !important;
+  }
+  
+  /* Responsive utilities for WordPress */
+  .wp-mobile-hidden {
+    @apply hidden md:block;
+  }
+  
+  .wp-mobile-only {
+    @apply block md:hidden;
+  }
+  
+  /* Focus utilities */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-nhk-primary-500 focus:ring-offset-2;
+  }
+  
+  .focus-ring-inset {
+    @apply focus:outline-none focus:ring-2 focus:ring-nhk-primary-500 focus:ring-inset;
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "events": [
+    {
+      "title": "Introduction to WordPress & Local Development Setup",
+      "date": "2025-09-02",
+      "start_time": "10:00 AM",
+      "instructor": "Jane Doe",
+      "subject": "Kickstart your WordPress journey. This session covers the fundamentals of WordPress, its architecture, and how to set up a local development environment using tools like XAMPP or Local by Flywheel."
+    },
+    {
+      "title": "Understanding the WordPress Core & File Structure",
+      "date": "2025-09-04",
+      "start_time": "1:00 PM",
+      "instructor": "John Smith",
+      "subject": "Dive deep into the heart of WordPress. We'll explore the core files, the database schema, and understand how everything works together to power a WordPress site."
+    },
+    {
+      "title": "Introduction to PHP for WordPress",
+      "date": "2025-09-05",
+      "start_time": "11:00 AM",
+      "instructor": "Emily White",
+      "subject": "Learn the essential PHP concepts required for WordPress development. This workshop covers variables, loops, conditional statements, and functions within the context of WordPress."
+    },
+    {
+      "title": "Your First Plugin: Hooks, Actions, and Filters",
+      "date": "2025-09-09",
+      "start_time": "2:00 PM",
+      "instructor": "Michael Brown",
+      "subject": "Unlock the power of WordPress extensibility. This session introduces the core concepts of hooks, teaching you how to use actions and filters to modify WordPress behavior without touching core files."
+    },
+    {
+      "title": "Creating Custom Post Types and Taxonomies",
+      "date": "2025-09-11",
+      "start_time": "10:00 AM",
+      "instructor": "Sarah Green",
+      "subject": "Go beyond posts and pages by creating your own content structures. Learn how to register and manage custom post types and taxonomies to build more complex and organized websites."
+    },
+    {
+      "title": "Building Admin Pages & Settings with the Settings API",
+      "date": "2025-09-12",
+      "start_time": "3:00 PM",
+      "instructor": "David Lee",
+      "subject": "Give your plugins a professional touch by creating custom admin pages. This workshop focuses on using the Settings API to create, manage, and validate plugin options securely."
+    },
+    {
+      "title": "Intermediate Plugin Development: Shortcodes & Widgets",
+      "date": "2025-09-16",
+      "start_time": "11:00 AM",
+      "instructor": "Jessica Miller",
+      "subject": "Learn two powerful ways to display dynamic content from your plugin. We'll build custom shortcodes for easy content embedding and create a custom widget for sidebars."
+    },
+    {
+      "title": "Working with JavaScript & AJAX in WordPress",
+      "date": "2025-09-18",
+      "start_time": "1:00 PM",
+      "instructor": "Chris Wilson",
+      "subject": "Make your plugins interactive and dynamic. This session covers how to properly enqueue JavaScript files and use AJAX to communicate with the server without a page reload."
+    },
+    {
+      "title": "Introduction to the WordPress REST API",
+      "date": "2025-09-19",
+      "start_time": "10:00 AM",
+      "instructor": "Maria Garcia",
+      "subject": "Decouple your WordPress backend with the REST API. Learn how to fetch, create, and update WordPress data from external applications using standard HTTP requests."
+    },
+    {
+      "title": "Advanced Plugin Security: Nonces and Data Validation",
+      "date": "2025-09-23",
+      "start_time": "4:00 PM",
+      "instructor": "James Taylor",
+      "subject": "Protect your users and your site by writing secure code. This advanced workshop covers crucial security topics like using nonces to prevent CSRF attacks and properly sanitizing and validating all user input."
+    },
+    {
+      "title": "Creating Custom Database Tables & Queries with $wpdb",
+      "date": "2025-09-25",
+      "start_time": "2:00 PM",
+      "instructor": "Linda Martinez",
+      "subject": "When default post types aren't enough, create your own database tables. Learn to use the global $wpdb object to safely interact with the WordPress database for custom data storage and retrieval."
+    },
+    {
+      "title": "Final Project: Building a Complete Plugin & Publishing to the Directory",
+      "date": "2025-09-26",
+      "start_time": "10:00 AM",
+      "instructor": "Robert Anderson",
+      "subject": "Bring everything you've learned together by building a complete, real-world plugin from scratch. This capstone session will also guide you through the process of preparing and submitting your plugin to the official WordPress.org plugin directory."
+    }
+  ]
+}

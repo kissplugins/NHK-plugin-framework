@@ -1,0 +1,70 @@
+# WordPress Plugin .gitignore
+
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bun.lockb
+*.lock
+
+# Build tools
+.cache/
+.parcel-cache/
+.vite/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# WordPress specific
+wp-config.php
+wp-content/uploads/
+wp-content/cache/
+wp-content/backup-db/
+wp-content/advanced-cache.php
+wp-content/wp-cache-config.php
+
+# Plugin development
+*.log
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Keep built assets but ignore source maps in production
+# assets/dist/*.map
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# Composer vendor (if using Composer)
+# vendor/
+
+# PHPUnit
+phpunit.xml
+.phpunit.result.cache
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# Debug files
+debug.log
+error.log
