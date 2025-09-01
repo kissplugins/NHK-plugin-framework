@@ -43,6 +43,8 @@ class DemoShortcode {
     public function init(): void {
         add_shortcode('nhk_event_demo', [$this, 'render_demo']);
         add_shortcode('nhk_events', [$this, 'render_event_list']);
+        // Diagnostic: super-simple loader that bypasses FSM to help isolate issues
+        add_shortcode('nhk_events_simple', [$this, 'render_simple_event_list']);
     }
     
     /**
@@ -339,27 +341,115 @@ class DemoShortcode {
         <?php
         return ob_get_clean();
     }
-    
+
+    /**
+     * Render a super-simple event list that bypasses the FSM
+     * Useful for diagnostics to confirm REST responses and asset loading
+     */
+    public function render_simple_event_list($atts = [], $content = '') {
+        $atts = \shortcode_atts([
+            'limit' => 5,
+            'show_debug' => false,
+        ], $atts, 'nhk_events_simple');
+
+        // Ensure assets are loaded so window.nhkEventApi exists
+        $this->enqueue_demo_assets();
+
+        $container_id = 'nhk-simple-' . \wp_generate_password(6, false, false);
+        ob_start();
+        ?>
+        <div id="<?php echo \esc_attr($container_id); ?>" class="nhk-events-simple">
+            <button type="button" class="button button-primary">Load Events (Simple)</button>
+            <div class="status" style="margin:8px 0;color:#555;">Idle</div>
+            <ul class="events" style="list-style:disc;padding-left:20px"></ul>
+        </div>
+        <script>
+        (function(){
+            const root = document.getElementById('<?php echo \esc_js($container_id); ?>');
+            if(!root) return;
+            const btn = root.querySelector('button');
+            const status = root.querySelector('.status');
+            const list = root.querySelector('.events');
+            const limit = <?php echo (int) $atts['limit']; ?>;
+
+            async function fetchViaClient(){
+                if (!window.nhkEventApi) throw new Error('ApiClient not initialized');
+                return await window.nhkEventApi.getEvents({ per_page: limit, page: 1 });
+            }
+            async function fetchDirect(){
+                const base = (window.nhkEventManager && window.nhkEventManager.apiUrl) || '/?rest_route=/nhk-events/v1';
+                const url = base + '/events?per_page=' + encodeURIComponent(limit);
+                const headers = {};
+                if (window.nhkEventManager && window.nhkEventManager.isUserLoggedIn && window.nhkEventManager.nonce) {
+                    headers['X-WP-Nonce'] = window.nhkEventManager.nonce;
+                }
+                const res = await fetch(url, { credentials: 'same-origin', headers });
+                if(!res.ok){
+                    const data = await res.text();
+                    throw new Error('HTTP ' + res.status + ' ' + res.statusText + ' — ' + data);
+                }
+                return await res.json();
+            }
+            function render(events){
+                list.innerHTML = '';
+                if(!events || events.length === 0){
+                    list.innerHTML = '<li>No events found.</li>';
+                    return;
+                }
+                for(const ev of events){
+                    const li = document.createElement('li');
+                    const date = (ev.start_date || ev.date || '').toString();
+                    li.innerHTML = `<strong>${(ev.title||'Untitled')}</strong> <em style="color:#777">${date}</em>`;
+                    list.appendChild(li);
+                }
+            }
+            async function load(){
+                status.textContent = 'Loading…';
+                list.innerHTML = '';
+                try{
+                    let data;
+                    try { data = await fetchViaClient(); }
+                    catch (e1) {
+                        console.warn('ApiClient path failed, retrying direct REST route', e1);
+                        data = await fetchDirect();
+                    }
+                    const events = data.events || data.data || data || [];
+                    render(events);
+                    status.textContent = 'Loaded ' + (events.length || 0) + ' event(s)';
+                } catch(err){
+                    console.error('Simple loader error:', err);
+                    status.textContent = 'Error: ' + (err && err.message ? err.message : err);
+                }
+            }
+            btn.addEventListener('click', load);
+            // Auto-load once for convenience
+            load();
+        })();
+        </script>
+        <?php
+        return ob_get_clean();
+    }
+
     /**
      * Enqueue demo assets
-     * 
+     *
      * @return void
      */
     protected function enqueue_demo_assets(): void {
         // Force asset loading for demo
         add_filter('nhk_event_manager_force_assets', '__return_true');
-        
+
         // Enqueue additional demo styles
         wp_add_inline_style('nhk-event-manager-frontend', '
             .nhk-event-manager-demo {
                 max-width: 1200px;
                 margin: 0 auto;
             }
-            
+
             .demo-header {
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             }
-            
+
             .loading-spinner {
                 width: 24px;
                 height: 24px;
@@ -368,7 +458,7 @@ class DemoShortcode {
                 border-radius: 50%;
                 animation: spin 1s linear infinite;
             }
-            
+
             @keyframes spin {
                 0% { transform: rotate(0deg); }
                 100% { transform: rotate(360deg); }

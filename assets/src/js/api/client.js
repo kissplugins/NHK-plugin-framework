@@ -11,13 +11,32 @@ class ApiClient {
         console.log('🔧 Initializing API Client...');
         console.log('WordPress data:', window.nhkEventManager);
 
-        this.baseUrl = window.nhkEventManager?.apiUrl || '/wp-json/nhk-events/v1';
+        const apiUrl = window.nhkEventManager?.apiUrl || '/wp-json/nhk-events/v1';
+        this.baseUrl = apiUrl;
+        // Fallback for environments where /wp-json is not routed (e.g., some Local setups)
+        // Will be used automatically if primary base returns 404.
+        this.fallbackBaseUrl = (function computeFallback(base) {
+            try {
+                // If already using rest_route format, keep as-is
+                if (/rest_route=/.test(base)) return base;
+                // Strip domain and the wp-json prefix, then build rest_route
+                const ns = base.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/?wp-json\//i, '');
+                const nsPath = ns.startsWith('/') ? ns : `/${ns}`;
+                return `/?rest_route=${nsPath}`;
+            } catch {
+                return '/?rest_route=/nhk-events/v1';
+            }
+        })(apiUrl);
+
         this.nonce = window.nhkEventManager?.nonce || '';
+        this.isUserLoggedIn = window.nhkEventManager?.isUserLoggedIn || false;
         this.isDebug = window.nhkEventManager?.isDebug || false;
 
         console.log('API Config:', {
             baseUrl: this.baseUrl,
+            fallbackBaseUrl: this.fallbackBaseUrl,
             hasNonce: !!this.nonce,
+            isUserLoggedIn: this.isUserLoggedIn,
             isDebug: this.isDebug
         });
 
@@ -90,16 +109,18 @@ class ApiClient {
      * Execute a single request
      */
     async executeRequest(endpoint, options = {}) {
-        const url = `${this.baseUrl}${endpoint}`;
-        
+        const isAbsolute = /^https?:/i.test(endpoint);
+        const primaryUrl = isAbsolute ? endpoint : `${this.baseUrl}${endpoint}`;
+
         const defaultOptions = {
             headers: {
                 'Content-Type': 'application/json',
-                'X-WP-Nonce': this.nonce
+                // Only send nonce if we know the user is logged in; avoids 403 rest_cookie_invalid_nonce for public GETs
+                ...(this.isUserLoggedIn && this.nonce ? { 'X-WP-Nonce': this.nonce } : {})
             },
             credentials: 'same-origin'
         };
-        
+
         let mergedOptions = {
             ...defaultOptions,
             ...options,
@@ -108,47 +129,52 @@ class ApiClient {
                 ...(options.headers || {})
             }
         };
-        
+
         // Apply request interceptors
         for (const interceptor of this.requestInterceptors) {
             mergedOptions = await interceptor(mergedOptions);
         }
-        
-        if (this.isDebug) {
-            console.log('🌐 API Request:', { url, options: mergedOptions });
-        }
-        
-        try {
-            const response = await fetch(url, mergedOptions);
-            
-            // Apply response interceptors
+
+        const fetchAndProcess = async (urlToFetch) => {
+            if (this.isDebug) {
+                console.log('🌐 API Request:', { url: urlToFetch, options: mergedOptions });
+            }
+            const response = await fetch(urlToFetch, mergedOptions);
             let processedResponse = response;
             for (const interceptor of this.responseInterceptors) {
                 processedResponse = await interceptor(processedResponse);
             }
-            
             if (!processedResponse.ok) {
                 const errorData = await this.parseErrorResponse(processedResponse);
                 throw new ApiError(errorData.message || 'API request failed', processedResponse.status, errorData);
             }
-            
             const data = await processedResponse.json();
-            
             if (this.isDebug) {
                 console.log('✅ API Response:', data);
             }
-            
             return data;
-            
+        };
+
+        try {
+            return await fetchAndProcess(primaryUrl);
         } catch (error) {
+            // If 404 and not absolute, try REST route fallback
+            if (!isAbsolute && error instanceof ApiError && error.status === 404) {
+                const fallbackUrl = `${this.fallbackBaseUrl}${endpoint}`;
+                if (this.isDebug) console.warn('🔁 Retrying with REST route fallback:', fallbackUrl);
+                try {
+                    return await fetchAndProcess(fallbackUrl);
+                } catch (fallbackError) {
+                    if (this.isDebug) console.error('❌ Fallback failed:', fallbackError);
+                    throw fallbackError;
+                }
+            }
             if (this.isDebug) {
                 console.error('❌ API Error:', error);
             }
-            
             if (error instanceof ApiError) {
                 throw error;
             }
-            
             throw new ApiError('Network error occurred', 0, { originalError: error });
         }
     }
@@ -172,9 +198,9 @@ class ApiClient {
      */
     async get(endpoint, params = {}) {
         const queryString = new URLSearchParams(params).toString();
-        const url = queryString ? `${this.baseUrl}${endpoint}?${queryString}` : `${this.baseUrl}${endpoint}`;
+        const path = queryString ? `${endpoint}?${queryString}` : `${endpoint}`;
 
-        return this.request(url, {
+        return this.request(path, {
             method: 'GET'
         });
     }
@@ -183,7 +209,7 @@ class ApiClient {
      * POST request helper
      */
     async post(endpoint, data = {}) {
-        return this.request(`${this.baseUrl}${endpoint}`, {
+        return this.request(`${endpoint}`, {
             method: 'POST',
             body: JSON.stringify(data)
         });
@@ -193,7 +219,7 @@ class ApiClient {
      * PUT request helper
      */
     async put(endpoint, data = {}) {
-        return this.request(`${this.baseUrl}${endpoint}`, {
+        return this.request(`${endpoint}`, {
             method: 'PUT',
             body: JSON.stringify(data)
         });
@@ -213,7 +239,7 @@ class ApiClient {
      * DELETE request helper
      */
     async delete(endpoint) {
-        return this.request(`${this.baseUrl}${endpoint}`, {
+        return this.request(`${endpoint}`, {
             method: 'DELETE'
         });
     }

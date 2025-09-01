@@ -40,7 +40,8 @@ document.addEventListener('alpine:init', () => {
             status: 'published'
         },
         
-        // UI state
+        // UI state (delegated to FSM for FSM-first UI)
+        // Kept locally for initial render defaults, but synchronized from selectors
         showFiltersPanel: false,
         selectedEvents: new Set(),
         
@@ -112,7 +113,13 @@ document.addEventListener('alpine:init', () => {
             this.isLoading = eventListSelectors.isLoading(state);
             this.hasError = eventListSelectors.hasError(state);
             this.error = eventListSelectors.getError(state);
-            
+
+            // Sync UI flags from FSM
+            this.showFiltersPanel = eventListSelectors.isFiltersOpen(state);
+            // Mirror selected IDs locally for convenience APIs
+            const selectedIds = eventListSelectors.getSelectedIds(state);
+            this.selectedEvents = new Set(selectedIds);
+
             // Update filters from state
             const stateFilters = eventListSelectors.getFilters(state);
             this.filters = { ...this.filters, ...stateFilters };
@@ -124,8 +131,8 @@ document.addEventListener('alpine:init', () => {
             });
             
             document.addEventListener('nhk:escape', () => {
-                this.showFiltersPanel = false;
-                this.selectedEvents.clear();
+                this.service?.send({ type: 'TOGGLE_FILTERS' });
+                this.service?.send({ type: 'CLEAR_SELECTION' });
             });
         },
         
@@ -156,7 +163,7 @@ document.addEventListener('alpine:init', () => {
         },
         
         toggleFiltersPanel() {
-            this.showFiltersPanel = !this.showFiltersPanel;
+            this.service.send({ type: 'TOGGLE_FILTERS' });
         },
         
         // Search with debouncing
@@ -212,29 +219,23 @@ document.addEventListener('alpine:init', () => {
         
         // Event selection
         toggleEventSelection(eventId) {
-            if (this.selectedEvents.has(eventId)) {
-                this.selectedEvents.delete(eventId);
-            } else {
-                this.selectedEvents.add(eventId);
-            }
+            this.service.send({ type: 'SELECT_EVENT', id: eventId });
         },
         
         selectAllEvents() {
-            this.events.forEach(event => {
-                this.selectedEvents.add(event.id);
-            });
+            this.service.send({ type: 'SELECT_ALL', ids: this.events.map(e => e.id) });
         },
         
         clearSelection() {
-            this.selectedEvents.clear();
+            this.service.send({ type: 'CLEAR_SELECTION' });
         },
         
         isEventSelected(eventId) {
-            return this.selectedEvents.has(eventId);
+            return eventListSelectors.getSelectedIds(this.state).includes(eventId);
         },
         
         getSelectedCount() {
-            return this.selectedEvents.size;
+            return eventListSelectors.getSelectedCount(this.state);
         },
         
         // Bulk actions

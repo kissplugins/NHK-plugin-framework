@@ -115,14 +115,16 @@ class AssetManager {
         
         // Localize script with necessary data
         wp_localize_script('nhk-event-manager-frontend', 'nhkEventManager', [
-            'apiUrl' => rest_url('nhk-events/v1'),
+            // Use a REST route format that works regardless of pretty permalinks
+            'apiUrl' => add_query_arg('rest_route', '/nhk-events/v1', home_url('/')),
             'nonce' => wp_create_nonce('wp_rest'),
+            'isUserLoggedIn' => is_user_logged_in(),
             'locale' => get_locale(),
             'isDebug' => true, // Enable debug mode temporarily to diagnose FSM issue
             'strings' => $this->get_localized_strings(),
             'config' => $this->get_frontend_config(),
         ]);
-        
+
         // Add inline styles for critical CSS if needed
         if ($this->should_inline_critical_css()) {
             $this->add_critical_css();
@@ -159,8 +161,10 @@ class AssetManager {
         
         // Localize admin script
         wp_localize_script('nhk-event-manager-admin', 'nhkEventManagerAdmin', [
-            'apiUrl' => rest_url('nhk-events/v1'),
+            // Use a REST route format that works regardless of pretty permalinks
+            'apiUrl' => add_query_arg('rest_route', '/nhk-events/v1', home_url('/')),
             'nonce' => wp_create_nonce('wp_rest'),
+            'isUserLoggedIn' => is_user_logged_in(),
             'adminUrl' => admin_url('admin-ajax.php'),
             'isDebug' => $this->is_dev_mode,
             'strings' => $this->get_admin_localized_strings(),
@@ -298,7 +302,9 @@ class AssetManager {
         }
         
         // Load on pages with event shortcodes
-        if ($post && has_shortcode($post->post_content, 'nhk_events')) {
+        if ($post && (has_shortcode($post->post_content, 'nhk_events')
+            || has_shortcode($post->post_content, 'nhk_event_demo')
+            || has_shortcode($post->post_content, 'nhk_events_simple'))) {
             return true;
         }
         

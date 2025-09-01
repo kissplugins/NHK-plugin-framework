@@ -5,7 +5,7 @@
  * and error handling using XState.
  */
 
-import { createMachine, assign } from 'xstate';
+import { createMachine, assign, fromPromise } from 'xstate';
 
 export const eventListMachine = createMachine({
     id: 'eventList',
@@ -31,7 +31,10 @@ export const eventListMachine = createMachine({
         sortBy: 'start_date',
         sortOrder: 'asc',
         error: null,
-        lastUpdated: null
+        lastUpdated: null,
+        // UI flags: FSM-first approach for Admin Demo
+        showFiltersPanel: false,
+        selectedIds: []
     },
     states: {
         idle: {
@@ -42,6 +45,29 @@ export const eventListMachine = createMachine({
                     actions: assign({
                         layout: (context, event) => event.layout
                     })
+                },
+                TOGGLE_FILTERS: {
+                    actions: assign({
+                        showFiltersPanel: (ctx) => !ctx.showFiltersPanel
+                    })
+                },
+                SELECT_EVENT: {
+                    actions: assign({
+                        selectedIds: (ctx, ev) => {
+                            const id = ev.id;
+                            const set = new Set(ctx.selectedIds);
+                            if (set.has(id)) set.delete(id); else set.add(id);
+                            return Array.from(set);
+                        }
+                    })
+                },
+                SELECT_ALL: {
+                    actions: assign({
+                        selectedIds: (ctx, ev) => Array.from(new Set([...(ctx.selectedIds||[]), ...ev.ids]))
+                    })
+                },
+                CLEAR_SELECTION: {
+                    actions: assign({ selectedIds: () => [] })
                 },
                 CHANGE_SORT: {
                     actions: assign({
@@ -57,6 +83,7 @@ export const eventListMachine = createMachine({
             invoke: {
                 id: 'loadEvents',
                 src: 'loadEvents',
+                input: (context) => ({ context }),
                 onDone: {
                     target: 'loaded',
                     actions: assign({
@@ -96,6 +123,29 @@ export const eventListMachine = createMachine({
                     actions: assign({
                         layout: (context, event) => event.layout
                     })
+                },
+                TOGGLE_FILTERS: {
+                    actions: assign({
+                        showFiltersPanel: (ctx) => !ctx.showFiltersPanel
+                    })
+                },
+                SELECT_EVENT: {
+                    actions: assign({
+                        selectedIds: (ctx, ev) => {
+                            const id = ev.id;
+                            const set = new Set(ctx.selectedIds);
+                            if (set.has(id)) set.delete(id); else set.add(id);
+                            return Array.from(set);
+                        }
+                    })
+                },
+                SELECT_ALL: {
+                    actions: assign({
+                        selectedIds: (ctx, ev) => Array.from(new Set([...(ctx.selectedIds||[]), ...ev.ids]))
+                    })
+                },
+                CLEAR_SELECTION: {
+                    actions: assign({ selectedIds: () => [] })
                 },
                 CHANGE_SORT: {
                     actions: assign({
@@ -250,13 +300,13 @@ export const eventListMachine = createMachine({
         }
     },
     
-    services: {
-        loadEvents: async (context) => {
+    actors: {
+        loadEvents: fromPromise(async ({ input }) => {
+            const context = input.context;
             const api = window.nhkEventApi;
             if (!api) {
                 throw new Error('API client not available');
             }
-            
             const params = {
                 page: context.pagination.currentPage,
                 per_page: context.pagination.perPage,
@@ -264,16 +314,12 @@ export const eventListMachine = createMachine({
                 order: context.sortOrder,
                 ...context.filters
             };
-            
-            // Remove empty filters
             Object.keys(params).forEach(key => {
                 if (params[key] === '' || params[key] === null || params[key] === undefined) {
                     delete params[key];
                 }
             });
-            
             const response = await api.getEvents(params);
-            
             return {
                 events: response.events || response.data || response,
                 pagination: {
@@ -283,7 +329,7 @@ export const eventListMachine = createMachine({
                     totalItems: response.total || response.length || 0
                 }
             };
-        }
+        })
     }
 });
 
@@ -312,5 +358,8 @@ export const eventListSelectors = {
         sortOrder: state.context.sortOrder 
     }),
     getError: (state) => state.context.error,
-    getLastUpdated: (state) => state.context.lastUpdated
+    getLastUpdated: (state) => state.context.lastUpdated,
+    isFiltersOpen: (state) => !!state.context.showFiltersPanel,
+    getSelectedIds: (state) => state.context.selectedIds || [],
+    getSelectedCount: (state) => (state.context.selectedIds || []).length
 };
