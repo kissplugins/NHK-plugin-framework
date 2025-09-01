@@ -186,22 +186,38 @@ class RepositoryListTable extends WP_List_Table {
     /**
      * Process repository data with plugin detection and state.
      *
+     * IMPORTANT: The FSM (StateManager) is the Single Source of Truth (SSoT).
+     * - UI must derive "plugin vs not" from state, not raw detection flags
+     * - Detection is used only to enrich metadata (name/version) and to help
+     *   StateManager converge during refreshes
+     *
      * @param array $repo Repository data from GitHub.
      * @return array Processed repository data.
      */
     private function process_repository( array $repo ): array {
         $repo_name = $repo['full_name'];
-        
-        // Get plugin detection result
+
+        // Enrich with detection (best-effort; may be skipped via option)
         $detection_result = $this->detection_service->detect_plugin( $repo );
-        $is_plugin = ! is_wp_error( $detection_result ) && $detection_result['is_plugin'];
-        
-        // Get installation state
+        $detected_is_plugin = ! is_wp_error( $detection_result ) && ( $detection_result['is_plugin'] ?? false );
+
+        // Get FSM state
         $state = $this->state_manager->get_state( $repo_name );
-        
+
+        // SAFEGUARD: Normalize state conservatively if detection strongly contradicts
+        // only for non-installed states. Installed states always win.
+        if ( ! in_array( $state, [ PluginState::INSTALLED_ACTIVE, PluginState::INSTALLED_INACTIVE ], true ) ) {
+            if ( $detected_is_plugin && $state === PluginState::NOT_PLUGIN ) {
+                $state = PluginState::AVAILABLE; // prefer "can install" over "not plugin"
+            }
+        }
+
+        // Derive canonical is_plugin from FSM state (SSoT)
+        $is_plugin_by_state = in_array( $state, [ PluginState::AVAILABLE, PluginState::INSTALLED_ACTIVE, PluginState::INSTALLED_INACTIVE ], true );
+
         return array_merge( $repo, [
-            'is_plugin' => $is_plugin,
-            'plugin_data' => $is_plugin ? $detection_result['plugin_data'] : [],
+            'is_plugin' => $is_plugin_by_state,
+            'plugin_data' => $detected_is_plugin ? ( $detection_result['plugin_data'] ?? [] ) : [],
             'installation_state' => $state,
         ] );
     }
@@ -334,67 +350,68 @@ class RepositoryListTable extends WP_List_Table {
      * @return string
      */
     public function column_actions( $item ): string {
-        if ( ! $item['is_plugin'] ) {
-            return '<span style="color: #999;">' . esc_html__( 'No actions available', 'kiss-smart-batch-installer' ) . '</span>';
-        }
-
-        $state = $item['installation_state'];
-        $repo_full_name = $item['full_name'];
-        $repo_name = $item['name'];
-
         $actions = [];
 
-        // Extract owner from full_name (owner/repo)
-        $owner = '';
-        if ( isset( $item['full_name'] ) && strpos( $item['full_name'], '/' ) !== false ) {
-            list($owner, $repo_name) = explode( '/', $item['full_name'], 2 );
+        if ( ! $item['is_plugin'] ) {
+            // Not a plugin: show info text, but still render Refresh button
+            $actions[] = '<span style="color: #999;">' . esc_html__( 'No actions available', 'kiss-smart-batch-installer' ) . '</span>';
+        } else {
+            $state = $item['installation_state'];
+            $repo_full_name = $item['full_name'];
+            $repo_name = $item['name'];
+
+            // Extract owner from full_name (owner/repo)
+            $owner = '';
+            if ( isset( $item['full_name'] ) && strpos( $item['full_name'], '/' ) !== false ) {
+                list($owner, $repo_name) = explode( '/', $item['full_name'], 2 );
+            }
+
+            switch ( $state ) {
+                case PluginState::AVAILABLE:
+                    $actions[] = sprintf(
+                        '<button type="button" class="button button-primary sbi-install-plugin" data-repo="%s" data-owner="%s">%s</button>',
+                        esc_attr( $repo_name ),
+                        esc_attr( $owner ),
+                        esc_html__( 'Install', 'kiss-smart-batch-installer' )
+                    );
+                    break;
+                case PluginState::INSTALLED_INACTIVE:
+                    $plugin_file = $item['plugin_file'] ?? '';
+                    if ( empty( $plugin_file ) ) {
+                        // Try to find the plugin file
+                        $plugin_slug = basename( $repo_full_name );
+                        $plugin_file = $this->find_installed_plugin( $plugin_slug );
+                    }
+                    $actions[] = sprintf(
+                        '<button type="button" class="button button-secondary sbi-activate-plugin" data-repo="%s" data-owner="%s" data-plugin-file="%s">%s</button>',
+                        esc_attr( $repo_name ),
+                        esc_attr( $owner ),
+                        esc_attr( $plugin_file ),
+                        esc_html__( 'Activate', 'kiss-smart-batch-installer' )
+                    );
+                    break;
+                case PluginState::INSTALLED_ACTIVE:
+                    $plugin_file = $item['plugin_file'] ?? '';
+                    if ( empty( $plugin_file ) ) {
+                        // Try to find the plugin file
+                        $plugin_slug = basename( $repo_full_name );
+                        $plugin_file = $this->find_installed_plugin( $plugin_slug );
+                    }
+                    $actions[] = sprintf(
+                        '<button type="button" class="button button-secondary sbi-deactivate-plugin" data-repo="%s" data-owner="%s" data-plugin-file="%s">%s</button>',
+                        esc_attr( $repo_name ),
+                        esc_attr( $owner ),
+                        esc_attr( $plugin_file ),
+                        esc_html__( 'Deactivate', 'kiss-smart-batch-installer' )
+                    );
+                    break;
+            }
         }
 
-        switch ( $state ) {
-            case PluginState::AVAILABLE:
-                $actions[] = sprintf(
-                    '<button type="button" class="button button-primary sbi-install-plugin" data-repo="%s" data-owner="%s">%s</button>',
-                    esc_attr( $repo_name ),
-                    esc_attr( $owner ),
-                    esc_html__( 'Install', 'kiss-smart-batch-installer' )
-                );
-                break;
-            case PluginState::INSTALLED_INACTIVE:
-                $plugin_file = $item['plugin_file'] ?? '';
-                if ( empty( $plugin_file ) ) {
-                    // Try to find the plugin file
-                    $plugin_slug = basename( $repo_full_name );
-                    $plugin_file = $this->find_installed_plugin( $plugin_slug );
-                }
-                $actions[] = sprintf(
-                    '<button type="button" class="button button-secondary sbi-activate-plugin" data-repo="%s" data-owner="%s" data-plugin-file="%s">%s</button>',
-                    esc_attr( $repo_name ),
-                    esc_attr( $owner ),
-                    esc_attr( $plugin_file ),
-                    esc_html__( 'Activate', 'kiss-smart-batch-installer' )
-                );
-                break;
-            case PluginState::INSTALLED_ACTIVE:
-                $plugin_file = $item['plugin_file'] ?? '';
-                if ( empty( $plugin_file ) ) {
-                    // Try to find the plugin file
-                    $plugin_slug = basename( $repo_full_name );
-                    $plugin_file = $this->find_installed_plugin( $plugin_slug );
-                }
-                $actions[] = sprintf(
-                    '<button type="button" class="button button-secondary sbi-deactivate-plugin" data-repo="%s" data-owner="%s" data-plugin-file="%s">%s</button>',
-                    esc_attr( $repo_name ),
-                    esc_attr( $owner ),
-                    esc_attr( $plugin_file ),
-                    esc_html__( 'Deactivate', 'kiss-smart-batch-installer' )
-                );
-                break;
-        }
-        
         // Always add refresh action
         $actions[] = sprintf(
             '<button type="button" class="button button-small sbi-refresh-status" data-repo="%s">%s</button>',
-            esc_attr( $repo_full_name ),
+            esc_attr( $item['full_name'] ?? '' ),
             esc_html__( 'Refresh', 'kiss-smart-batch-installer' )
         );
 

@@ -125,6 +125,10 @@
                 'Starting installation for ' + owner + '/' + repository);
         }
 
+        // NOTE TO FUTURE CONTRIBUTORS AND LLMs:
+        // The debug output around this AJAX call is essential for diagnosing
+        // install issues in the field. Do NOT remove window.sbiDebug entries or
+        // reduce error detail without providing an equivalent mechanism.
         $.ajax({
             url: sbiAjax.ajaxurl,
             type: 'POST',
@@ -211,14 +215,38 @@
             }
         })
         .fail(function(xhr, status, error) {
+            // NOTE TO FUTURE CONTRIBUTORS AND LLMs:
+            // This enhanced error handling is critical in real-world debugging.
+            // DO NOT remove or reduce detail without ensuring equivalent diagnostics.
+            var httpCode = xhr && xhr.status ? xhr.status : 'n/a';
+            var statusText = xhr && xhr.statusText ? xhr.statusText : '';
+            var respText = '';
+            try { respText = (xhr && xhr.responseText) ? xhr.responseText.toString() : ''; } catch(e) {}
+            var snippet = respText ? respText.substring(0, 400) : '';
+
             if (window.sbiDebug) {
                 window.sbiDebug.addEntry('error', 'Install AJAX Failed',
-                    'AJAX request failed for ' + owner + '/' + repository + ': ' + error + ' (Status: ' + status + ')');
+                    'AJAX request failed for ' + owner + '/' + repository + ': ' + error + ' (Status: ' + status + ', HTTP: ' + httpCode + ' ' + statusText + ')');
+                if (snippet) {
+                    window.sbiDebug.addEntry('info', 'AJAX Response Snippet', snippet);
+                }
             }
 
             var errorMsg = 'Installation request failed. Please try again.';
+            // Try to extract server-provided JSON message if present
+            try {
+                var data = JSON.parse(respText);
+                if (data && data.data && data.data.message) {
+                    errorMsg = data.data.message;
+                }
+            } catch(parseErr) {}
+
             if (status === 'timeout') {
                 errorMsg = 'Installation timed out. The plugin may still be installing in the background. Please refresh the page to check if it was installed successfully.';
+            } else if (httpCode === 403) {
+                errorMsg = 'Installation blocked (403). Please verify your WordPress nonce/session is valid and you have install_plugins capability.';
+            } else if (httpCode >= 500 && httpCode <= 599) {
+                errorMsg = 'Server error (' + httpCode + '). Check PHP error logs for fatals and review SBI INSTALL logs.';
             }
 
             SBI.showMessage(errorMsg, 'error');

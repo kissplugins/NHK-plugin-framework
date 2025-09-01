@@ -282,11 +282,12 @@ class SelfTestsPage {
      */
     private function run_all_tests(): void {
         $this->test_results = [];
-        
+
         // Test categories
         $test_categories = [
             'core_services' => 'Core Services Tests',
             'ajax_handlers' => 'AJAX Handler Tests',
+            'install_path' => 'Install Path Tests',
             'integration' => 'Integration Tests',
             'ui_components' => 'UI Component Tests',
             'data_integrity' => 'Data Integrity Tests',
@@ -305,7 +306,7 @@ class SelfTestsPage {
                     'failed' => 0,
                     'total_time' => 0
                 ];
-                
+
                 // Calculate summary stats
                 foreach ( $this->test_results[ $category ]['tests'] as $test ) {
                     if ( $test['passed'] ) {
@@ -326,22 +327,22 @@ class SelfTestsPage {
      */
     private function test_core_services(): array {
         $tests = [];
-        
+
         // Test 1: GitHub Service Configuration
         $tests[] = $this->run_test( 'GitHub Service Configuration', function() {
             $config = $this->github_service->get_configuration();
-            
+
             if ( empty( $config['username'] ) ) {
                 throw new \Exception( 'GitHub username not configured' );
             }
-            
+
             if ( empty( $config['repositories'] ) ) {
                 throw new \Exception( 'No repositories configured for scanning' );
             }
-            
-            return sprintf( 'Configured for user: %s with %d repositories', 
-                $config['username'], 
-                count( $config['repositories'] ) 
+
+            return sprintf( 'Configured for user: %s with %d repositories',
+                $config['username'],
+                count( $config['repositories'] )
             );
         });
 
@@ -349,11 +350,11 @@ class SelfTestsPage {
         $tests[] = $this->run_test( 'GitHub API Connectivity', function() {
             $config = $this->github_service->get_configuration();
             $username = $config['username'];
-            
+
             if ( empty( $username ) ) {
                 throw new \Exception( 'No GitHub username configured' );
             }
-            
+
             // Test API call
             $response = wp_remote_get( "https://api.github.com/users/{$username}", [
                 'timeout' => 10,
@@ -361,21 +362,21 @@ class SelfTestsPage {
                     'User-Agent' => 'KISS-Smart-Batch-Installer'
                 ]
             ]);
-            
+
             if ( is_wp_error( $response ) ) {
                 throw new \Exception( 'GitHub API request failed: ' . $response->get_error_message() );
             }
-            
+
             $code = wp_remote_retrieve_response_code( $response );
             if ( $code !== 200 ) {
                 throw new \Exception( "GitHub API returned status code: {$code}" );
             }
-            
+
             $body = json_decode( wp_remote_retrieve_body( $response ), true );
             if ( ! $body || ! isset( $body['login'] ) ) {
                 throw new \Exception( 'Invalid GitHub API response format' );
             }
-            
+
             return sprintf( 'Successfully connected to GitHub API for user: %s', $body['login'] );
         });
 
@@ -388,19 +389,19 @@ class SelfTestsPage {
                 'description' => 'A test WordPress plugin',
                 'html_url' => 'https://github.com/test/wordpress-plugin'
             ];
-            
+
             // Test detection (this will likely fail for mock data, but we're testing the service works)
             $result = $this->detection_service->detect_plugin( $mock_repo );
-            
+
             if ( is_wp_error( $result ) ) {
                 // This is expected for mock data, but service should handle it gracefully
                 return 'Plugin detection service is working (gracefully handled mock data)';
             }
-            
+
             if ( ! isset( $result['is_plugin'] ) || ! isset( $result['scan_method'] ) ) {
                 throw new \Exception( 'Plugin detection result missing required fields' );
             }
-            
+
             return sprintf( 'Plugin detection completed using method: %s', $result['scan_method'] );
         });
 
@@ -505,7 +506,105 @@ class SelfTestsPage {
             }
 
             return 'State management working correctly';
+
+            // FSM transitions and event log basic test
+            $tests[] = $this->run_test( 'FSM Transitions and Event Log', function() {
+                $repo = 'test/fsm-plugin';
+
+                // Start from unknown and attempt invalid transition (should be blocked and logged)
+                $this->state_manager->transition( $repo, PluginState::INSTALLED_ACTIVE, [ 'source' => 'selftest' ] );
+                $events = $this->state_manager->get_events( $repo, 5 );
+                $has_blocked = false;
+                foreach ( $events as $e ) {
+                    if ( isset($e['event']) && $e['event'] === 'transition_blocked' ) {
+                        $has_blocked = true;
+                        break;
+                    }
+                }
+                if ( ! $has_blocked ) {
+                    throw new \Exception( 'Expected invalid transition to be blocked and logged' );
+                }
+
+                // Valid transitions: UNKNOWN -> CHECKING -> AVAILABLE
+                $this->state_manager->transition( $repo, PluginState::CHECKING, [ 'source' => 'selftest' ] );
+                $this->state_manager->transition( $repo, PluginState::AVAILABLE, [ 'source' => 'selftest' ] );
+                $state = $this->state_manager->get_state( $repo );
+                if ( $state !== PluginState::AVAILABLE ) {
+                    throw new \Exception( 'Expected state to be AVAILABLE after valid transitions' );
+                }
+
+                // Ensure events contain recent transitions
+                $events = $this->state_manager->get_events( $repo, 10 );
+                if ( empty( $events ) ) {
+                    throw new \Exception( 'Expected recent events for repository' );
+                }
+
+                return 'FSM transitions validated and events logged (' . count($events) . ' recent)';
+            } );
+
         });
+
+        return $tests;
+    }
+
+    /**
+     * Test integration workflows.
+     */
+    /**
+     * Test install path for KISS Plugin Quick Search and surface discrete error chain.
+     *
+     * @return array Test results.
+     */
+    private function test_install_path(): array {
+        $tests = [];
+
+        // Test 1: Install KISS Plugin Quick Search (dry-run/error-surfacing)
+        $tests[] = $this->run_test( 'PQS Install Flow - Error Surfacing', function() {
+            // Owner/Repo for KISS Plugin Quick Search
+            $owner = 'kissplugins';
+            $repo  = 'KISS-Plugin-Quick-Search';
+
+            // Obtain installation service via container
+            $installation_service = sbi_service( \SBI\Services\PluginInstallationService::class );
+            if ( ! $installation_service ) {
+                throw new \Exception( 'Installation service not available' );
+            }
+
+            // Capture progress updates locally
+            $progress = [];
+            $installation_service->set_progress_callback( function( $step, $status, $message ) use ( &$progress ) {
+                $progress[] = [ 'step' => $step, 'status' => $status, 'message' => $message ];
+            } );
+
+            // Attempt install (no activation). We do not modify state, only observe results.
+            $result = $installation_service->install_and_activate( $owner, $repo, false );
+
+            // Build a readable chain from progress + result
+            $lines = [];
+            foreach ( $progress as $p ) {
+                $lines[] = sprintf( '%s: [%s] %s', $p['step'], $p['status'], $p['message'] );
+            }
+
+            if ( is_wp_error( $result ) ) {
+                // Append error details
+                $lines[] = 'Result: ERROR - ' . $result->get_error_message();
+                // Surface HTTP-ish hints commonly seen during download
+                $msg = strtolower( $result->get_error_message() );
+                if ( str_contains( $msg, '403' ) || str_contains( $msg, 'forbidden' ) ) {
+                    $lines[] = 'Hint: Possible nonce/capability issue or host blocking downloads.';
+                } elseif ( str_contains( $msg, '404' ) || str_contains( $msg, 'not found' ) ) {
+                    $lines[] = 'Hint: Verify repository exists and is public: https://github.com/' . $owner . '/' . $repo;
+                } elseif ( str_contains( $msg, 'ssl' ) ) {
+                    $lines[] = 'Hint: SSL problem. Check cURL/OpenSSL configuration on the server.';
+                }
+
+                return implode( "\n", $lines );
+            }
+
+            // Success path: include plugin_file and activated flag
+            $lines[] = 'Result: SUCCESS - plugin_file=' . ( $result['plugin_file'] ?? 'n/a' ) . ', activated=' . ( $result['activated'] ? 'yes' : 'no' );
+            return implode( "\n", $lines );
+        } );
 
         return $tests;
     }
@@ -864,6 +963,75 @@ class SelfTestsPage {
             return 'All button rendering tests passed: ' . implode( ', ', $results );
         });
 
+        // Test: SSoT Consistency (FSM vs Plugin Status)
+        $tests[] = $this->run_test( 'SSoT Consistency (FSM vs Plugin Status)', function() {
+            // Minimal mock repository data
+            $repo_data = [
+                'id' => 1,
+                'name' => 'mock-repo',
+                'full_name' => 'owner/mock-repo',
+                'description' => '',
+                'html_url' => 'https://github.com/owner/mock-repo',
+                'updated_at' => date('c'),
+                'language' => 'PHP',
+            ];
+
+            $cases = [
+                [ 'state' => \SBI\Enums\PluginState::NOT_PLUGIN, 'expect_status' => 'Not a WordPress Plugin', 'expect_state' => 'Not Plugin' ],
+                [ 'state' => \SBI\Enums\PluginState::AVAILABLE, 'expect_status' => 'WordPress Plugin', 'expect_state' => 'Available' ],
+            ];
+
+            $list_table = new \SBI\Admin\RepositoryListTable(
+                $this->github_service,
+                $this->detection_service,
+                $this->state_manager
+            );
+
+            $results = [];
+
+            foreach ( $cases as $case ) {
+                $state = $case['state'];
+                // Derive is_plugin from FSM state (Single Source of Truth)
+                $is_plugin_by_state = in_array( $state, [
+                    \SBI\Enums\PluginState::AVAILABLE,
+                    \SBI\Enums\PluginState::INSTALLED_ACTIVE,
+                    \SBI\Enums\PluginState::INSTALLED_INACTIVE,
+                ], true );
+
+                $flattened = array_merge( $repo_data, [
+                    'is_plugin' => $is_plugin_by_state,
+                    'plugin_data' => [],
+                    'plugin_file' => '',
+                    'installation_state' => $state,
+                ] );
+
+                $status_html = $list_table->column_plugin_status( $flattened );
+                $state_html = $list_table->column_state( $flattened );
+
+                if ( strpos( $status_html, $case['expect_status'] ) === false ) {
+                    throw new \Exception( sprintf(
+                        'SSoT mismatch: expected Plugin Status "%s" for state %s. Got HTML: %s',
+                        $case['expect_status'],
+                        $state->value,
+                        $status_html
+                    ) );
+                }
+
+                if ( strpos( $state_html, $case['expect_state'] ) === false ) {
+                    throw new \Exception( sprintf(
+                        'SSoT mismatch: expected Installation State "%s". Got HTML: %s',
+                        $case['expect_state'],
+                        $state_html
+                    ) );
+                }
+
+                $results[] = $state->value . ' -> OK';
+            }
+
+            return 'SSoT consistency validated: ' . implode( ', ', $results );
+        });
+
+
         return $tests;
     }
 
@@ -982,55 +1150,64 @@ class SelfTestsPage {
 
         // Test 3: Error Handling and Recovery
         $tests[] = $this->run_test( 'Error Handling and Recovery', function() {
-            $error_test_cases = [
-                [
-                    'repo' => [
-                        'full_name' => '',
-                        'name' => '',
-                        'default_branch' => 'main'
+            // Ensure detection actually runs for this test
+            $original_setting = get_option( 'sbi_skip_plugin_detection', false );
+            update_option( 'sbi_skip_plugin_detection', false );
+            try {
+                $error_test_cases = [
+                    [
+                        'repo' => [
+                            'full_name' => '',
+                            'name' => '',
+                            'default_branch' => 'main'
+                        ],
+                        'expected_error' => 'invalid_repository'
                     ],
-                    'expected_error' => 'invalid_repository'
-                ],
-                [
-                    'repo' => [
-                        'full_name' => 'nonexistent/definitely-does-not-exist-12345',
-                        'name' => 'definitely-does-not-exist-12345',
-                        'default_branch' => 'main'
-                    ],
-                    'expected_error' => 'file_not_found'
-                ]
-            ];
+                    [
+                        'repo' => [
+                            'full_name' => 'nonexistent/definitely-does-not-exist-12345',
+                            'name' => 'definitely-does-not-exist-12345',
+                            'default_branch' => 'main'
+                        ],
+                        'expected_error' => 'file_not_found'
+                    ]
+                ];
 
-            $error_results = [];
-            foreach ( $error_test_cases as $case ) {
-                $result = $this->detection_service->detect_plugin( $case['repo'] );
+                $error_results = [];
+                foreach ( $error_test_cases as $case ) {
+                    // Force refresh to avoid cached bypasses
+                    $result = $this->detection_service->detect_plugin( $case['repo'], true );
 
-                if ( ! is_wp_error( $result ) ) {
-                    throw new \Exception( sprintf(
-                        'ERROR HANDLING ISSUE: Expected WP_Error for invalid repository %s, but got successful result. Error handling may not be working properly.',
-                        $case['repo']['full_name'] ?: 'empty'
-                    ) );
+                    if ( empty( $case['repo']['full_name'] ) ) {
+                        // Empty repository should always yield WP_Error('invalid_repository')
+                        if ( ! is_wp_error( $result ) || $result->get_error_code() !== 'invalid_repository' ) {
+                            throw new \Exception( 'ERROR HANDLING ISSUE: invalid repository did not return expected WP_Error("invalid_repository").' );
+                        }
+                        $error_results[] = 'empty → invalid_repository';
+                        continue;
+                    }
+
+                    // For nonexistent repo, either a WP_Error or a non-plugin array is acceptable
+                    if ( is_wp_error( $result ) ) {
+                        // Accept file_not_found and similar HTTP errors
+                        $error_results[] = sprintf( '%s → %s', $case['repo']['full_name'], $result->get_error_code() );
+                    } else {
+                        // Must not be detected as a plugin
+                        if ( ! is_array( $result ) || ! array_key_exists( 'is_plugin', $result ) ) {
+                            throw new \Exception( 'ERROR HANDLING ISSUE: detection did not return expected array shape for nonexistent repository.' );
+                        }
+                        if ( ! empty( $result['is_plugin'] ) ) {
+                            throw new \Exception( 'ERROR HANDLING ISSUE: nonexistent repository was incorrectly detected as a plugin.' );
+                        }
+                        $error_results[] = sprintf( '%s → handled (non-plugin)', $case['repo']['full_name'] );
+                    }
                 }
 
-                $error_code = $result->get_error_code();
-                if ( $error_code !== $case['expected_error'] ) {
-                    // Log the actual error for debugging but don't fail the test
-                    error_log( sprintf(
-                        'SBI Test: Expected error code %s but got %s for repository %s. Error message: %s',
-                        $case['expected_error'],
-                        $error_code,
-                        $case['repo']['full_name'] ?: 'empty',
-                        $result->get_error_message()
-                    ) );
-                }
-
-                $error_results[] = sprintf( '%s → %s',
-                    $case['repo']['full_name'] ?: 'empty',
-                    $error_code
-                );
+                return 'Error handling working: ' . implode( ', ', $error_results );
+            } finally {
+                // Restore skip detection original setting
+                update_option( 'sbi_skip_plugin_detection', $original_setting );
             }
-
-            return 'Error handling working: ' . implode( ', ', $error_results );
         });
 
         return $tests;

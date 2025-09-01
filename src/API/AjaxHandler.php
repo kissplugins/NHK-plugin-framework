@@ -12,6 +12,7 @@ use SBI\Services\GitHubService;
 use SBI\Services\PluginDetectionService;
 use SBI\Services\PluginInstallationService;
 use SBI\Services\StateManager;
+use SBI\Enums\PluginState;
 
 /**
  * AJAX handler class.
@@ -122,20 +123,23 @@ class AjaxHandler {
             ] );
         }
         
-        // Process repositories with plugin detection
+        // Process repositories with detection enrichment; FSM is Single Source of Truth (SSoT)
         $processed_repos = [];
         foreach ( $repositories as $repo ) {
             $detection_result = $this->detection_service->detect_plugin( $repo );
             $state = $this->state_manager->get_state( $repo['full_name'] );
-            
+
+            // Derive canonical plugin flag from FSM state only
+            $is_plugin_ssot = in_array( $state, [ PluginState::AVAILABLE, PluginState::INSTALLED_INACTIVE, PluginState::INSTALLED_ACTIVE ], true );
+
             $processed_repos[] = [
                 'repository' => $repo,
-                'is_plugin' => ! is_wp_error( $detection_result ) && $detection_result['is_plugin'],
-                'plugin_data' => ! is_wp_error( $detection_result ) ? $detection_result['plugin_data'] : [],
+                'is_plugin' => $is_plugin_ssot,
+                'plugin_data' => ! is_wp_error( $detection_result ) ? ( $detection_result['plugin_data'] ?? [] ) : [],
                 'state' => $state->value,
             ];
         }
-        
+
         wp_send_json_success( [
             'repositories' => $processed_repos,
             'total' => count( $processed_repos ),
@@ -228,48 +232,41 @@ class AjaxHandler {
             $detection_result = $this->detection_service->detect_plugin( $repo );
             $is_plugin = ! is_wp_error( $detection_result ) && $detection_result['is_plugin'];
 
-            // Determine the correct state based on detection result and installation status
-            if ( is_wp_error( $detection_result ) ) {
-                $state = \SBI\Enums\PluginState::ERROR;
-                error_log( sprintf( 'SBI: Repository %s has error state: %s', $repo['full_name'], $detection_result->get_error_message() ) );
-            } elseif ( ! $is_plugin ) {
-                $state = \SBI\Enums\PluginState::NOT_PLUGIN;
-                error_log( sprintf( 'SBI: Repository %s is not a WordPress plugin', $repo['full_name'] ) );
-            } else {
-                // It's a WordPress plugin, check if it's installed
-                $plugin_slug = basename( $repo['full_name'] );
+            // FSM-first: refresh and read canonical state
+            $this->state_manager->refresh_state( $repo['full_name'] );
+            $state = $this->state_manager->get_state( $repo['full_name'] );
 
-                // Look for the plugin file in the detection result first
-                $detected_plugin_file = ! is_wp_error( $detection_result ) ? ($detection_result['plugin_file'] ?? '') : '';
+            // Compute plugin file information
+            $plugin_slug = basename( $repo['full_name'] );
+            $detected_plugin_file = ! is_wp_error( $detection_result ) ? ( $detection_result['plugin_file'] ?? '' ) : '';
+            $installed_plugin_file = $this->find_installed_plugin( $plugin_slug );
 
-                // Find installed plugin
-                $installed_plugin_file = $this->find_installed_plugin( $plugin_slug );
-
-                if ( ! empty( $installed_plugin_file ) ) {
-                    // Plugin is installed
-                    if ( is_plugin_active( $installed_plugin_file ) ) {
-                        $state = \SBI\Enums\PluginState::INSTALLED_ACTIVE;
-                        error_log( sprintf( 'SBI: Plugin %s is installed and active', $repo['full_name'] ) );
-                    } else {
-                        $state = \SBI\Enums\PluginState::INSTALLED_INACTIVE;
-                        error_log( sprintf( 'SBI: Plugin %s is installed but inactive', $repo['full_name'] ) );
-                    }
-                    $plugin_file = $installed_plugin_file;
+            if ( ! empty( $installed_plugin_file ) ) {
+                // Installed: align state with runtime activation to be extra safe
+                if ( is_plugin_active( $installed_plugin_file ) ) {
+                    $state = PluginState::INSTALLED_ACTIVE;
                 } else {
-                    // Plugin is not installed - mark as available for installation
-                    $state = \SBI\Enums\PluginState::AVAILABLE;
-                    $plugin_file = $detected_plugin_file; // Use the detected plugin file path
-                    error_log( sprintf( 'SBI: Plugin %s is available for installation (detected file: %s)', $repo['full_name'], $plugin_file ) );
+                    $state = PluginState::INSTALLED_INACTIVE;
                 }
+                $plugin_file = $installed_plugin_file;
+            } else {
+                // Not installed: SAFEGUARD — if detection says plugin but FSM says NOT_PLUGIN, treat as AVAILABLE
+                if ( ! is_wp_error( $detection_result ) && ( $detection_result['is_plugin'] ?? false ) && $state === PluginState::NOT_PLUGIN ) {
+                    $state = PluginState::AVAILABLE;
+                }
+                $plugin_file = $detected_plugin_file;
             }
+
+            // Derive is_plugin from FSM state (SSoT)
+            $is_plugin_ssot = in_array( $state, [ PluginState::AVAILABLE, PluginState::INSTALLED_INACTIVE, PluginState::INSTALLED_ACTIVE ], true );
 
             $processed_repo = [
                 'repository' => $repo,
-                'is_plugin' => $is_plugin,
-                'plugin_data' => ! is_wp_error( $detection_result ) ? $detection_result['plugin_data'] : [],
+                'is_plugin' => $is_plugin_ssot,
+                'plugin_data' => ! is_wp_error( $detection_result ) ? ( $detection_result['plugin_data'] ?? [] ) : [],
                 'plugin_file' => $plugin_file ?? '',  // Make sure plugin_file is always set
                 'state' => $state->value,
-                'scan_method' => ! is_wp_error( $detection_result ) ? $detection_result['scan_method'] : '',
+                'scan_method' => ! is_wp_error( $detection_result ) ? ( $detection_result['scan_method'] ?? '' ) : '',
                 'error' => is_wp_error( $detection_result ) ? $detection_result->get_error_message() : null,
             ];
 
@@ -367,7 +364,7 @@ class AjaxHandler {
             ] );
         }
         
-        // Refresh state
+        // Refresh state: use StateManager FSM
         $this->state_manager->refresh_state( $repo_name );
         $new_state = $this->state_manager->get_state( $repo_name );
         
@@ -414,6 +411,9 @@ class AjaxHandler {
             ];
 
             $this->send_progress_update( 'Security Verification', 'success', 'Security checks passed' );
+
+            // FSM: mark repository as checking prior to install attempt
+            $this->state_manager->transition( sprintf('%s/%s', $owner, $repo_name), PluginState::CHECKING, [ 'source' => 'ajax_install' ] );
 
             // Step 2: Parameter validation
             $debug_steps[] = [
@@ -489,6 +489,10 @@ class AjaxHandler {
             // Set progress callback for the installation service
             $this->installation_service->set_progress_callback( [ $this, 'send_progress_update' ] );
 
+            // NOTE TO FUTURE CONTRIBUTORS AND LLMs:
+            // The debug_steps/progress_updates and enhanced error mapping below are
+            // critical for field debugging. Do NOT remove or simplify. If you must
+            // refactor, preserve equivalent structured debug output.
             $result = $this->installation_service->install_and_activate( $owner, $repo_name, $activate );
 
             if ( is_wp_error( $result ) ) {
@@ -517,6 +521,9 @@ class AjaxHandler {
                     'time' => round( ( microtime( true ) - $start_time ) * 1000, 2 )
                 ];
 
+                // FSM: mark repository as error
+                $this->state_manager->transition( sprintf('%s/%s', $owner, $repo_name), PluginState::ERROR, [ 'source' => 'ajax_install', 'error_code' => $error_code ] );
+
                 $this->send_progress_update( 'Plugin Installation', 'error', 'Installation failed: ' . $enhanced_message );
 
                 error_log( sprintf( 'SBI INSTALL: Installation failed for %s/%s: %s (Code: %s)',
@@ -544,6 +551,10 @@ class AjaxHandler {
             ];
 
             $this->send_progress_update( 'Plugin Installation', 'success', "Successfully installed {$owner}/{$repo_name}" );
+
+            // FSM: set final installed state based on activation
+            $final_state = ( ! empty( $result['activated'] ) ) ? PluginState::INSTALLED_ACTIVE : PluginState::INSTALLED_INACTIVE;
+            $this->state_manager->transition( sprintf('%s/%s', $owner, $repo_name), $final_state, [ 'source' => 'ajax_install' ] );
 
             error_log( sprintf( 'SBI INSTALL: Installation successful for %s/%s', $owner, $repo_name ) );
 
@@ -621,10 +632,19 @@ class AjaxHandler {
         $result = $this->installation_service->activate_plugin( $plugin_file );
 
         if ( is_wp_error( $result ) ) {
+            // FSM: mark error state for this repo
+            if ( ! empty( $repo_name ) ) {
+                $this->state_manager->transition( $repo_name, PluginState::ERROR, [ 'source' => 'ajax_activate' ] );
+            }
             wp_send_json_error( [
                 'message' => $result->get_error_message(),
                 'repository' => $repo_name,
             ] );
+        }
+
+        // FSM: set repo active state
+        if ( ! empty( $repo_name ) ) {
+            $this->state_manager->transition( $repo_name, PluginState::INSTALLED_ACTIVE, [ 'source' => 'ajax_activate' ] );
         }
 
         wp_send_json_success( array_merge( $result, [
@@ -651,10 +671,19 @@ class AjaxHandler {
         $result = $this->installation_service->deactivate_plugin( $plugin_file );
 
         if ( is_wp_error( $result ) ) {
+            // FSM: mark error state for this repo
+            if ( ! empty( $repo_name ) ) {
+                $this->state_manager->transition( $repo_name, PluginState::ERROR, [ 'source' => 'ajax_deactivate' ] );
+            }
             wp_send_json_error( [
                 'message' => $result->get_error_message(),
                 'repository' => $repo_name,
             ] );
+        }
+
+        // FSM: set repo inactive state
+        if ( ! empty( $repo_name ) ) {
+            $this->state_manager->transition( $repo_name, PluginState::INSTALLED_INACTIVE, [ 'source' => 'ajax_deactivate' ] );
         }
 
         wp_send_json_success( array_merge( $result, [

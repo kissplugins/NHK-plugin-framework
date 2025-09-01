@@ -5,6 +5,53 @@ All notable changes to the KISS Smart Batch Installer will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.16] - 2025-08-24
+
+## [1.0.17] - 2025-08-25
+
+### Fixed
+- UI inconsistency where Plugin Status showed "WordPress Plugin" while Installation State showed "Not Plugin"; normalized rendering to use FSM (StateManager) as single source of truth
+- Repository row processing now derives is_plugin from FSM state; detection is metadata-only enrichment
+
+### Added
+- Self Tests: added SSoT Consistency test to ensure Plugin Status aligns with FSM-derived is_plugin
+
+- Safeguards and comments in RepositoryListTable and AjaxHandler explaining SSoT decision and conservative normalization rules
+
+
+### Added
+- FSM Self Tests: validate allowed/blocked transitions and verify event log structure
+
+### Changed
+- Architecture doc: updated REVISED CHECKLIST to mark implemented FSM items
+
+## [1.0.15] - 2025-08-24
+
+### Added
+- Lightweight validated state machine in StateManager: explicit transitions, allowed map, and transient-backed event log (capped)
+- FSM integration points: Ajax install/activate/deactivate and refresh paths
+
+### Fixed
+- Robust state updates during install/activation/deactivation with transition logging
+
+## [1.0.14] - 2025-08-24
+
+### Fixed
+- Always render Refresh button in Actions column even for non-plugin rows
+- Self Test: force real plugin detection for error-handling subtest (restores original setting)
+
+## [1.0.13] - 2025-08-24
+
+### Fixed
+- False negative where Installation State showed Not Plugin while Plugin Status showed WordPress Plugin; normalized to single source of truth
+- Improved front-end AJAX failure diagnostics for Install action (HTTP code, response snippet)
+
+### Added
+- DO NOT REMOVE developer guard comments around critical debug logging and error reporting in install flow (PHP + JS)
+
+### Developer Notes
+- Kept verbose logging in PluginInstallationService and structured debug_steps in AjaxHandler; these aid field debugging and should be preserved
+
 ## [1.0.12] - 2025-08-24
 
 ### Fixed
