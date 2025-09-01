@@ -131,16 +131,16 @@ document.addEventListener('alpine:init', () => {
         
         // Event loading
         loadEvents() {
-            this.service.send('LOAD_EVENTS');
+            this.service.send({ type: 'LOAD_EVENTS' });
         },
         
         reloadEvents() {
-            this.service.send('RELOAD_EVENTS');
+            this.service.send({ type: 'RELOAD_EVENTS' });
         },
         
         // Filtering
         applyFilters() {
-            this.service.send('APPLY_FILTERS', { filters: this.filters });
+            this.service.send({ type: 'APPLY_FILTERS', filters: this.filters });
         },
         
         clearFilters() {
@@ -171,7 +171,7 @@ document.addEventListener('alpine:init', () => {
         // Layout management
         changeLayout(layout) {
             if (this.config.allowedLayouts.includes(layout)) {
-                this.service.send('CHANGE_LAYOUT', { layout });
+                this.service.send({ type: 'CHANGE_LAYOUT', layout });
             }
         },
         
@@ -189,7 +189,7 @@ document.addEventListener('alpine:init', () => {
                 sortOrder = 'asc';
             }
             
-            this.service.send('CHANGE_SORT', { sortBy, sortOrder });
+            this.service.send({ type: 'CHANGE_SORT', sortBy, sortOrder });
         },
         
         getSortIcon(field) {
@@ -203,7 +203,7 @@ document.addEventListener('alpine:init', () => {
         
         // Pagination
         changePage(page) {
-            this.service.send('CHANGE_PAGE', { page });
+            this.service.send({ type: 'CHANGE_PAGE', page });
         },
         
         getPagination() {
