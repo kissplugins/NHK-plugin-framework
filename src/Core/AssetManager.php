@@ -115,8 +115,8 @@ class AssetManager {
         
         // Localize script with necessary data
         wp_localize_script('nhk-event-manager-frontend', 'nhkEventManager', [
-            // Use a REST route format that works regardless of pretty permalinks
-            'apiUrl' => add_query_arg('rest_route', '/nhk-events/v1', home_url('/')),
+            // Prefer canonical REST API base to avoid environments blocking ?rest_route
+            'apiUrl' => rest_url('nhk-events/v1'),
             'nonce' => wp_create_nonce('wp_rest'),
             'isUserLoggedIn' => is_user_logged_in(),
             'locale' => get_locale(),
@@ -161,8 +161,8 @@ class AssetManager {
         
         // Localize admin script
         wp_localize_script('nhk-event-manager-admin', 'nhkEventManagerAdmin', [
-            // Use a REST route format that works regardless of pretty permalinks
-            'apiUrl' => add_query_arg('rest_route', '/nhk-events/v1', home_url('/')),
+            // Prefer canonical REST API base to avoid environments blocking ?rest_route
+            'apiUrl' => rest_url('nhk-events/v1'),
             'nonce' => wp_create_nonce('wp_rest'),
             'isUserLoggedIn' => is_user_logged_in(),
             'adminUrl' => admin_url('admin-ajax.php'),

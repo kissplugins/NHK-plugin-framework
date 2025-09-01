@@ -377,7 +377,7 @@ class DemoShortcode {
                 return await window.nhkEventApi.getEvents({ per_page: limit, page: 1 });
             }
             async function fetchDirect(){
-                const base = (window.nhkEventManager && window.nhkEventManager.apiUrl) || '/?rest_route=/nhk-events/v1';
+                const base = (window.nhkEventManager && window.nhkEventManager.apiUrl) || '/wp-json/nhk-events/v1';
                 const url = base + '/events?per_page=' + encodeURIComponent(limit);
                 const headers = {};
                 if (window.nhkEventManager && window.nhkEventManager.isUserLoggedIn && window.nhkEventManager.nonce) {
