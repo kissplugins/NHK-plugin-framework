@@ -54,6 +54,11 @@ document.addEventListener('alpine:init', () => {
                 console.log('ℹ️ Event List enhancement disabled (SSR only). Set ajax="true" to enable live updates.');
                 return;
             }
+            // Also require readiness feature flag (degraded mode fallback)
+            if (!(window.nhkFeatures && window.nhkFeatures.liveFilters)) {
+                console.log('ℹ️ Enhancements disabled by readiness FSM (degraded mode). Using SSR fallback.');
+                return;
+            }
 
             try {
                 // Check if required dependencies are available

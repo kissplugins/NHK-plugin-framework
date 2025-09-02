@@ -5,6 +5,19 @@
 ## [1.0.9] - 2025-09-02
 
 ## [1.0.10] - 2025-09-02
+
+## [1.0.11] - 2025-09-02
+
+## [1.0.12] - 2025-09-02
+### Changed
+- Removed unused import (assign) from appReadyMachine to keep code leaner.
+
+### Changed
+- eventList enhancement now additionally checks window.nhkFeatures.liveFilters (set by readiness FSM) to decide whether to initialize; ensures degraded mode falls back to SSR even when ajax="true".
+
+### Notes
+- Rebuild assets: `bun run build:js`.
+
 ### Changed
 - DRY query building: introduced src/Services/EventQueryBuilder.php and wired both REST /events and [nhk_events] SSR to use it, ensuring consistent filters/pagination/sorting across paths.
 

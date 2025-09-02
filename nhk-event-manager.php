@@ -3,7 +3,7 @@
  * Plugin Name: NHK Event Manager
  * Plugin URI: https://github.com/nhkode/nhk-event-manager
  * Description: A comprehensive event management plugin demonstrating the NHK Framework with modern frontend technologies. Features include custom post types, taxonomies, REST API, shortcodes, background jobs, health checks, and modern JavaScript integration.
- * Version: 1.0.9
+ * Version: 1.0.11
  * Author: NHK Development Team
  * Author URI: https://nhkode.com
  * License: GPL v2 or later
@@ -23,7 +23,7 @@
 defined('ABSPATH') || exit;
 
 // Define plugin constants
-define('NHK_EVENT_MANAGER_VERSION', '1.0.9');
+define('NHK_EVENT_MANAGER_VERSION', '1.0.11');
 define('NHK_EVENT_MANAGER_FILE', __FILE__);
 define('NHK_EVENT_MANAGER_PATH', plugin_dir_path(__FILE__));
 define('NHK_EVENT_MANAGER_URL', plugin_dir_url(__FILE__));

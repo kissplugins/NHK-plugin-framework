@@ -99,10 +99,22 @@ This document serves as a practical checklist for the NHK Event Manager plugin t
 - [x] Add feature flags for optional enhancements
   - Notes: window.nhkFeatures = { liveFilters, instantSearch, bulkActions } set by FSM; components read-only.
 
-### Phase 3: Optimize and Clean
+### Phase 3A: Optimize and Clean
 - [ ] Remove unused dependencies and code
-- [ ] Audit and simplify state machines
-- [ ] Document the simplified architecture
+  - Notes: Pending a targeted audit to avoid regressions. Candidate: prune unused debug/test utilities once Phase 3B tests are added.
+- [x] Audit and simplify state machines
+  - Notes: Readiness FSM remains capability-only; eventList now respects window.nhkFeatures.liveFilters and ajax flag, falling back to SSR in degraded mode. Deeper FSM reductions (removing data responsibilities) are planned in later iterations.
+- [x] Document the simplified architecture
+  - Notes: Added “Agreed Conventions” and Loader/FSM contract to PROJECT-KEEP-IT-SIMPLE.md; FSM is explicitly separated from data fetching/rendering.
+
+
+### Phase 3B: DRY and Tests
+- [x] Introduce shared EventQueryBuilder for SSR and REST
+  - Notes: Implemented src/Services/EventQueryBuilder.php and wired both [nhk_events] SSR and /events REST endpoint to use it.
+- [ ] Add PHPUnit tests for EventQueryBuilder::build_args
+  - Notes: Cover page/per_page, search, category/venue, date range, and sorting.
+- [ ] Identify and remove any remaining duplicate event query logic
+  - Notes: Search for any custom WP_Query for events and refactor to use the builder.
 
 ## Success Metrics
 - [ ] **Reliability**: Features work consistently across different WP environments

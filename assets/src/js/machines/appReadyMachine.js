@@ -6,7 +6,7 @@
  * - Does NOT render UI
  */
 
-import { createMachine, assign } from 'xstate';
+import { createMachine } from 'xstate';
 
 // Global feature flags (read by components)
 window.nhkFeatures = window.nhkFeatures || {
