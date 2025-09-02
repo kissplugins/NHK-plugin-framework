@@ -532,47 +532,16 @@ class DemoShortcode {
         $date_from = isset($request['date_from']) ? sanitize_text_field($request['date_from']) : '';
         $date_to = isset($request['date_to']) ? sanitize_text_field($request['date_to']) : '';
 
-        $args = [
-            'post_type' => 'nhk_event',
-            'post_status' => 'publish',
-            'paged' => $page,
-            'posts_per_page' => $per_page,
-        ];
-        if ($search) { $args['s'] = $search; }
-        $tax_query = [];
-        if ($cat) {
-            $tax_query[] = [
-                'taxonomy' => 'nhk_event_category',
-                'field' => is_numeric($cat) ? 'term_id' : 'slug',
-                'terms' => $cat,
-            ];
-        }
-        if ($venue) {
-            $tax_query[] = [
-                'taxonomy' => 'nhk_event_venue',
-                'field' => is_numeric($venue) ? 'term_id' : 'slug',
-                'terms' => $venue,
-            ];
-        }
-        if (!empty($tax_query)) { $args['tax_query'] = $tax_query; }
-        $meta_query = [];
-        if ($date_from) {
-            $meta_query[] = [
-                'key' => '_nhk_event_start_date',
-                'value' => $date_from,
-                'compare' => '>=',
-                'type' => 'DATE',
-            ];
-        }
-        if ($date_to) {
-            $meta_query[] = [
-                'key' => '_nhk_event_end_date',
-                'value' => $date_to,
-                'compare' => '<=',
-                'type' => 'DATE',
-            ];
-        }
-        if (!empty($meta_query)) { $args['meta_query'] = $meta_query; }
+        $params = array_filter([
+            'page' => $page,
+            'per_page' => $per_page,
+            's' => $search,
+            'category' => $cat ?: null,
+            'venue' => $venue ?: null,
+            'date_from' => $date_from ?: null,
+            'date_to' => $date_to ?: null,
+        ], function($v){ return $v !== null && $v !== ''; });
+        $args = \NHK\EventManager\Services\EventQueryBuilder::build_args($params);
 
         $query = new \WP_Query($args);
         ?>

@@ -3,6 +3,14 @@
 ## [1.0.8] - 2025-09-02
 
 ## [1.0.9] - 2025-09-02
+
+## [1.0.10] - 2025-09-02
+### Changed
+- DRY query building: introduced src/Services/EventQueryBuilder.php and wired both REST /events and [nhk_events] SSR to use it, ensuring consistent filters/pagination/sorting across paths.
+
+### Notes
+- No schema changes. Verify filters behave the same via REST and SSR.
+
 ### Added
 - Minimal readiness FSM (appReadyMachine) and capability loader emitting nhk:* signals. FSM sets window.nhkFeatures flags and never handles data fetching/rendering.
 

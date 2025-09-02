@@ -248,46 +248,20 @@ class Plugin {
      */
     public function get_events_endpoint($request) {
         try {
-            // Basic implementation - will be enhanced with proper service layer
-            $args = [
-                'post_type' => 'nhk_event',
-                'post_status' => 'publish',
-                'posts_per_page' => $request->get_param('per_page') ?: 10,
-                'paged' => $request->get_param('page') ?: 1,
+            // Build consistent query args via shared builder
+            $params = [
+                'page' => (int) ($request->get_param('page') ?: 1),
+                'per_page' => (int) ($request->get_param('per_page') ?: 10),
+                'search' => $request->get_param('search') ?: $request->get_param('s'),
+                'category' => $request->get_param('category'),
+                'venue' => $request->get_param('venue'),
+                'date_from' => $request->get_param('date_from'),
+                'date_to' => $request->get_param('date_to'),
+                'orderby' => $request->get_param('orderby'),
+                'order' => $request->get_param('order'),
             ];
-
-            // Add search parameter if provided
-            if ($search = $request->get_param('search')) {
-                $args['s'] = sanitize_text_field($search);
-            }
-
-            // Add category filter if provided
-            if ($category = $request->get_param('category')) {
-                $args['tax_query'] = [
-                    [
-                        'taxonomy' => 'nhk_event_category',
-                        'field'    => 'slug',
-                        'terms'    => sanitize_text_field($category),
-                    ],
-                ];
-            }
-
-            // Add venue filter if provided
-            if ($venue = $request->get_param('venue')) {
-                $args['tax_query'] = [
-                    [
-                        'taxonomy' => 'nhk_event_venue',
-                        'field'    => 'slug',
-                        'terms'    => sanitize_text_field($venue),
-                    ],
-                ];
-            }
-
-            // Add ordering
-            if ($orderby = $request->get_param('orderby')) {
-                $args['orderby'] = sanitize_text_field($orderby);
-                $args['order'] = $request->get_param('order') ?: 'ASC';
-            }
+            $params = array_filter($params, function($v){ return $v !== null && $v !== ''; });
+            $args = \NHK\EventManager\Services\EventQueryBuilder::build_args($params);
 
             $query = new \WP_Query($args);
 
