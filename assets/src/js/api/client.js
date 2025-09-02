@@ -11,7 +11,9 @@ class ApiClient {
         console.log('🔧 Initializing API Client...');
         console.log('WordPress data:', window.nhkEventManager);
 
-        const apiUrl = window.nhkEventManager?.apiUrl || '/wp-json/nhk-events/v1';
+        const apiUrl = window.nhkEventManager?.apiUrl
+            || window.nhkEventManagerAdmin?.apiUrl
+            || '/wp-json/nhk-events/v1';
         this.baseUrl = apiUrl;
         // Fallback for environments where /wp-json is not routed (e.g., some Local setups)
         // Will be used automatically if primary base returns 404.
@@ -28,9 +30,9 @@ class ApiClient {
             }
         })(apiUrl);
 
-        this.nonce = window.nhkEventManager?.nonce || '';
-        this.isUserLoggedIn = window.nhkEventManager?.isUserLoggedIn || false;
-        this.isDebug = window.nhkEventManager?.isDebug || false;
+        this.nonce = window.nhkEventManager?.nonce || window.nhkEventManagerAdmin?.nonce || '';
+        this.isUserLoggedIn = window.nhkEventManager?.isUserLoggedIn || window.nhkEventManagerAdmin?.isUserLoggedIn || false;
+        this.isDebug = window.nhkEventManager?.isDebug || window.nhkEventManagerAdmin?.isDebug || false;
 
         console.log('API Config:', {
             baseUrl: this.baseUrl,

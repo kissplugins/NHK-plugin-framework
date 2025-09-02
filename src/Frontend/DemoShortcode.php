@@ -73,7 +73,7 @@ class DemoShortcode {
                 <p class="opacity-90">Modern WordPress plugin with Alpine.js, XState, and Tailwind CSS</p>
             </div>
             
-            <div x-data="eventList({
+            <div id="nhk-event-list-demo" x-data="eventList({
                 layout: '<?php echo esc_attr($atts['layout']); ?>',
                 perPage: <?php echo intval($atts['per_page']); ?>,
                 showFilters: <?php echo $atts['show_filters'] ? 'true' : 'false'; ?>,
@@ -98,7 +98,7 @@ class DemoShortcode {
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Demo Controls -->
                 <div class="bg-white p-4 rounded-lg shadow-sm border">
                     <h3 class="font-semibold mb-3">Demo Controls</h3>
@@ -113,6 +113,26 @@ class DemoShortcode {
                             🧹 Clear Filters
                         </button>
                     </div>
+                </div>
+
+                <!-- Diagnostic Controls -->
+                <div class="bg-white p-4 rounded-lg shadow-sm border">
+                    <h3 class="font-semibold mb-3">Diagnostic Controls</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <button type="button" class="btn-outline" onclick="window.nhkDiag?.step1()">Step 1: Check /health</button>
+                        <button type="button" class="btn-outline" onclick="window.nhkDiag?.step2()">Step 2: Init API Client</button>
+                        <button type="button" class="btn-outline" onclick="window.nhkDiag?.step3()">Step 3: Fetch Events</button>
+                        <button type="button" class="btn-outline" onclick="window.nhkDiag?.step4()">Step 4: Run FSM load</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3" style="margin-top:8px">
+                        <button type="button" class="btn-outline" onclick="window.nhkDiag?.step4a()">4a: Inspect DOM</button>
+                        <button type="button" class="btn-outline" onclick="window.nhkDiag?.step4b()">4b: Capture Alpine</button>
+                        <button type="button" class="btn-outline" onclick="window.nhkDiag?.step4c()">4c: Call loadEvents()</button>
+                        <button type="button" class="btn-outline" onclick="window.nhkDiag?.step4d()">4d: Send LOAD_EVENTS</button>
+                        <button type="button" class="btn-outline" onclick="window.nhkDiag?.step4e()">4e: Show snapshot</button>
+                    </div>
+                    <div id="nhk-diag-log" style="margin-top:10px;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;max-height:200px;overflow:auto;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;font-size:12px;line-height:1.45;"></div>
+                    <div id="nhk-diag-render" style="margin-top:10px;padding:8px;background:#ffffff;border:1px dashed #e5e7eb;border-radius:6px;max-height:220px;overflow:auto"></div>
                 </div>
                 
                 <!-- Loading State -->
@@ -295,6 +315,186 @@ class DemoShortcode {
                     }
                 }));
             });
+
+            // Lightweight diagnostic harness to step through initialization
+            (function(){
+                const logEl = () => document.getElementById('nhk-diag-log');
+                function log(msg, data){
+                    try{ console.log('[NHK DIAG]', msg, data||''); }catch(e){}
+                    const el = logEl(); if(!el) return;
+                    const line = document.createElement('div');
+                    const ts = new Date().toISOString().split('T')[1].replace('Z','');
+                    line.textContent = '[' + ts + '] ' + msg;
+                    el.appendChild(line);
+                    el.scrollTop = el.scrollHeight;
+                }
+                function baseUrl(){
+                    const admin = window.nhkEventManagerAdmin && window.nhkEventManagerAdmin.apiUrl;
+                    const front = window.nhkEventManager && window.nhkEventManager.apiUrl;
+                    return (admin || front || '/wp-json/nhk-events/v1').replace(/\/$/, '');
+                }
+                // Try to capture the Alpine component when it becomes available
+                (function captureComponent(){
+                    const root = document.getElementById('nhk-event-list-demo');
+                    if (root && root.__x && root.__x.$data) {
+                        window.nhkEventListCmp = root.__x.$data;
+                        log('Alpine component captured');
+                        if (window.nhkDiagPendingLoad && typeof window.nhkEventListCmp.loadEvents === 'function') {
+                            log('Pending request detected — invoking loadEvents now');
+                            try { window.nhkEventListCmp.loadEvents(); } catch(e) { log('Auto-load failed: ' + e); }
+                            window.nhkDiagPendingLoad = false;
+                        }
+                        return;
+                    }
+                    setTimeout(captureComponent, 250);
+                })();
+                async function step1(){
+                    const url = baseUrl() + '/health';
+                    log('Step 1: GET ' + url);
+                    try{
+                        const res = await fetch(url, { credentials: 'same-origin' });
+                        const json = await res.json();
+                        log('Health OK: ' + JSON.stringify(json));
+                    }catch(err){
+                        log('Health FAILED: ' + (err && err.message ? err.message : err));
+                    }
+                }
+                function ensureClient(){
+                    if (window.nhkEventApi && typeof window.nhkEventApi.getEvents === 'function') return window.nhkEventApi;
+                    const apiBase = baseUrl();
+                    const nonce = (window.nhkEventManagerAdmin && window.nhkEventManagerAdmin.nonce) || (window.nhkEventManager && window.nhkEventManager.nonce);
+                    log('Creating simple fetch client with base ' + apiBase);
+                    window.nhkEventApi = {
+                        async getEvents(params){
+                            const u = new URL(apiBase + '/events', window.location.origin);
+                            Object.entries(params||{}).forEach(([k,v]) => u.searchParams.set(k, v));
+                            const headers = {};
+                            if (nonce) headers['X-WP-Nonce'] = nonce;
+                            const res = await fetch(u.toString(), { credentials: 'same-origin', headers });
+                            if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + res.statusText);
+                            return res.json();
+                        }
+                    };
+                    return window.nhkEventApi;
+                }
+                function step2(){
+                    try{
+                        const client = ensureClient();
+                        log('Step 2: API client ready: ' + (client ? 'yes' : 'no'));
+                    }catch(err){
+                        log('Step 2 FAILED: ' + err);
+                    }
+                }
+                async function step3(){
+                    try{
+                        const client = ensureClient();
+                        log('Step 3: Fetching events via client…');
+                        const data = await client.getEvents({ per_page: 5, page: 1 });
+                        const count = (data && (data.events?.length || data.length || data.total || 0)) || 0;
+                        log('Step 3 OK: received ' + count + ' items');
+                    }catch(err){
+                        log('Step 3 FAILED: ' + (err && err.message ? err.message : err));
+                    }
+                }
+                function describeX(x){
+                    if (!x) return 'n/a';
+                    const keys = Object.keys(x).filter(k => typeof x[k] !== 'function');
+                    const fns = Object.keys(x).filter(k => typeof x[k] === 'function');
+                    return 'keys: ' + keys.join(', ') + ' | fns: ' + fns.join(', ');
+                }
+                function inspectDom(){
+                    const root = document.getElementById('nhk-event-list-demo');
+                    if (!root) { log('4a: root not found'); return; }
+                    const hasX = !!root.__x;
+                    const xDataAttr = root.getAttribute('x-data');
+                    log('4a: root found. x-data attr: ' + xDataAttr + ' | __x: ' + hasX);
+                    const list = Array.from(document.querySelectorAll('[x-data]')).map(el => el.getAttribute('x-data')||'');
+                    log('4a: [x-data] count=' + list.length + ' first=' + (list[0]||''));
+                }
+                function captureAlpine(){
+                    const root = document.getElementById('nhk-event-list-demo');
+                    if (root && root.__x && root.__x.$data) {
+                        window.nhkEventListCmp = root.__x.$data;
+                        log('4b: captured component — ' + describeX(window.nhkEventListCmp));
+                        // Attach debug hooks
+                        try{
+                            const svc = window.nhkEventListCmp.service;
+                            if (svc && typeof svc.subscribe === 'function'){
+                                svc.subscribe((snap)=>{ try{ log('FSM state=' + JSON.stringify(snap.value)); }catch(e){} });
+                            }
+                        }catch(e){ log('4b: subscribe attach failed: ' + e); }
+                    } else {
+                        log('4b: component not ready');
+                    }
+                }
+                async function step4(){
+                    try{
+                        const root = document.getElementById('nhk-event-list-demo');
+                        if (root && root.__x && root.__x.$data && typeof root.__x.$data.loadEvents === 'function'){
+                            log('Step 4: Invoking Alpine loadEvents()');
+                            root.__x.$data.loadEvents();
+                        } else if (window.nhkEventListCmp && typeof window.nhkEventListCmp.loadEvents === 'function') {
+                            log('Step 4: Using captured component handle');
+                            window.nhkEventListCmp.loadEvents();
+                        } else {
+                            log('Step 4: Alpine not directly accessible; will auto-run when ready. Running 4a+4b…');
+                            inspectDom();
+                            captureAlpine();
+                            window.nhkDiagPendingLoad = true;
+                        }
+                        log('Step 4 invoked. Watch UI and console for state transitions.');
+                    }catch(err){
+                        log('Step 4 ERROR: ' + err);
+                    }
+                }
+                function renderList(container, items){
+                    container.innerHTML = '';
+                    if (!items || !items.length){ container.textContent = 'No items'; return; }
+                    const ul = document.createElement('ul'); ul.style.margin='0'; ul.style.paddingLeft='18px';
+                    for (const ev of items){
+                        const li = document.createElement('li');
+                        li.textContent = (ev.title || 'Untitled') + ' — ' + (ev.start_date || ev.date || '');
+                        ul.appendChild(li);
+                    }
+                    container.appendChild(ul);
+                }
+                function step4c(){
+                    if (window.nhkEventListCmp && typeof window.nhkEventListCmp.loadEvents === 'function') {
+                        log('4c: calling loadEvents() via captured cmp');
+                        try{ window.nhkEventListCmp.loadEvents(); }catch(e){ log('4c failed: ' + e); }
+                    } else { log('4c: component not captured'); }
+                }
+                function step4d(){
+                    const cmp = window.nhkEventListCmp;
+                    if (cmp && cmp.service) {
+                        try {
+                            log('4d: sending LOAD_EVENTS to service');
+                            cmp.service.send({ type: 'LOAD_EVENTS' });
+                        } catch(e) { log('4d failed: ' + e); }
+                    } else { log('4d: no service found'); }
+                }
+                async function step4f(){
+                    const mount = document.getElementById('nhk-diag-render');
+                    if (!mount){ log('4f: render mount not found'); return; }
+                    try{
+                        const client = ensureClient();
+                        const data = await client.getEvents({ per_page: 5, page: 1 });
+                        const events = data.events || data.data || data || [];
+                        log('4f: rendering ' + events.length + ' items directly');
+                        renderList(mount, events);
+                    }catch(e){
+                        log('4f failed: ' + (e && e.message ? e.message : e));
+                    }
+                }
+                function step4e(){
+                    const cmp = window.nhkEventListCmp;
+                    if (cmp && cmp.state) {
+                        try { log('4e: snapshot=' + JSON.stringify(cmp.state.value)); } catch(e) { log('4e: snapshot stringify failed'); }
+                    } else { log('4e: no snapshot present'); }
+                }
+                window.nhkDiag = { step1, step2, step3, step4, step4a: inspectDom, step4b: captureAlpine, step4c, step4d, step4e, step4f };
+                log('Diagnostic harness initialized');
+            })();
         </script>
         <?php
         return ob_get_clean();
@@ -315,27 +515,114 @@ class DemoShortcode {
             'layout' => 'list',
             'show_filters' => false,
             'show_pagination' => true,
+            'ajax' => false,
         ], $atts, 'nhk_events');
-        
+
         // Ensure assets are loaded
         $this->enqueue_demo_assets();
-        
+
         ob_start();
+        // Read filters from request (fallback-friendly)
+        $request = wp_unslash($_GET);
+        $page = isset($request['paged']) ? max(1, (int) $request['paged']) : (get_query_var('paged') ?: 1);
+        $per_page = (int) $atts['limit'];
+        $search = isset($request['s']) ? sanitize_text_field($request['s']) : '';
+        $cat = isset($request['event_category']) ? sanitize_text_field($request['event_category']) : '';
+        $venue = isset($request['event_venue']) ? sanitize_text_field($request['event_venue']) : '';
+        $date_from = isset($request['date_from']) ? sanitize_text_field($request['date_from']) : '';
+        $date_to = isset($request['date_to']) ? sanitize_text_field($request['date_to']) : '';
+
+        $args = [
+            'post_type' => 'nhk_event',
+            'post_status' => 'publish',
+            'paged' => $page,
+            'posts_per_page' => $per_page,
+        ];
+        if ($search) { $args['s'] = $search; }
+        $tax_query = [];
+        if ($cat) {
+            $tax_query[] = [
+                'taxonomy' => 'nhk_event_category',
+                'field' => is_numeric($cat) ? 'term_id' : 'slug',
+                'terms' => $cat,
+            ];
+        }
+        if ($venue) {
+            $tax_query[] = [
+                'taxonomy' => 'nhk_event_venue',
+                'field' => is_numeric($venue) ? 'term_id' : 'slug',
+                'terms' => $venue,
+            ];
+        }
+        if (!empty($tax_query)) { $args['tax_query'] = $tax_query; }
+        $meta_query = [];
+        if ($date_from) {
+            $meta_query[] = [
+                'key' => '_nhk_event_start_date',
+                'value' => $date_from,
+                'compare' => '>=',
+                'type' => 'DATE',
+            ];
+        }
+        if ($date_to) {
+            $meta_query[] = [
+                'key' => '_nhk_event_end_date',
+                'value' => $date_to,
+                'compare' => '<=',
+                'type' => 'DATE',
+            ];
+        }
+        if (!empty($meta_query)) { $args['meta_query'] = $meta_query; }
+
+        $query = new \WP_Query($args);
         ?>
-        <div class="nhk-events-shortcode">
-            <div x-data="eventList(<?php echo esc_attr(json_encode($atts)); ?>)">
-                <!-- Event list component will be rendered here -->
-                <div x-show="isLoading" class="text-center py-4">
+        <div class="nhk-events-shortcode" data-nhk-enhance="event-list">
+            <div x-data="eventList(<?php echo esc_attr(json_encode([
+                'layout' => $atts['layout'],
+                'perPage' => (int) $atts['limit'],
+                'showFilters' => (bool) $atts['show_filters'],
+                'showPagination' => (bool) $atts['show_pagination'],
+                'ajax' => filter_var($atts['ajax'], FILTER_VALIDATE_BOOLEAN),
+            ])); ?>)">
+                <!-- Progressive enhancement spinners (hidden when SSR displays) -->
+                <div x-show="isLoading" class="text-center py-4" style="display:none;">
                     <div class="loading-spinner mx-auto"></div>
                 </div>
-                
-                <div x-show="!isLoading && events.length === 0" class="text-center py-8 text-gray-500">
-                    No events found.
-                </div>
-                
-                <div x-show="!isLoading && events.length > 0">
-                    <!-- Events will be displayed here based on layout -->
-                </div>
+
+                <?php if ($query->have_posts()) : ?>
+                    <ul class="space-y-4">
+                        <?php while ($query->have_posts()) : $query->the_post(); ?>
+                            <li class="border rounded-lg p-4">
+                                <a href="<?php echo esc_url(get_permalink()); ?>" class="font-semibold text-lg"><?php echo esc_html(get_the_title()); ?></a>
+                                <?php
+                                $start = get_post_meta(get_the_ID(), '_nhk_event_start_date', true);
+                                $venue_terms = get_the_terms(get_the_ID(), 'nhk_event_venue');
+                                $venue_label = $venue_terms && !is_wp_error($venue_terms) ? $venue_terms[0]->name : '';
+                                ?>
+                                <div class="text-sm text-gray-600 mt-1">
+                                    <?php if ($start) : ?><span><?php echo esc_html($start); ?></span><?php endif; ?>
+                                    <?php if ($start && $venue_label) : ?> • <?php endif; ?>
+                                    <?php if ($venue_label) : ?><span><?php echo esc_html($venue_label); ?></span><?php endif; ?>
+                                </div>
+                                <div class="text-gray-700 mt-2"><?php echo esc_html(wp_strip_all_tags(get_the_excerpt())); ?></div>
+                            </li>
+                        <?php endwhile; wp_reset_postdata(); ?>
+                    </ul>
+
+                    <?php
+                    $total_pages = $query->max_num_pages;
+                    if ($total_pages > 1) {
+                        $current = max(1, $page);
+                        echo '<div class="mt-6">' . paginate_links([
+                            'current' => $current,
+                            'total' => $total_pages,
+                            'type' => 'list',
+                        ]) . '</div>';
+                    }
+                    ?>
+                <?php else : ?>
+                    <div class="text-center py-8 text-gray-500"><?php esc_html_e('No events found.', 'nhk-event-manager'); ?></div>
+                <?php endif; ?>
             </div>
         </div>
         <?php

@@ -87,10 +87,10 @@ export const eventListMachine = createMachine({
                 onDone: {
                     target: 'loaded',
                     actions: assign({
-                        events: (context, event) => event.data.events || [],
+                        events: (context, event) => (event.output?.events) || [],
                         pagination: (context, event) => ({
                             ...context.pagination,
-                            ...event.data.pagination
+                            ...(event.output?.pagination || {})
                         }),
                         lastUpdated: () => new Date().toISOString(),
                         error: null
@@ -99,7 +99,7 @@ export const eventListMachine = createMachine({
                 onError: {
                     target: 'error',
                     actions: assign({
-                        error: (context, event) => event.data
+                        error: (context, event) => event.error
                     })
                 }
             }

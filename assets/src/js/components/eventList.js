@@ -27,9 +27,10 @@ document.addEventListener('alpine:init', () => {
             showPagination: true,
             showSort: true,
             allowedLayouts: ['list', 'grid', 'table'],
+            ajax: false, // Opt-in progressive enhancement; SSR is default
             ...config
         },
-        
+
         // Filters
         filters: {
             search: '',
@@ -47,6 +48,12 @@ document.addEventListener('alpine:init', () => {
         
         init() {
             console.log('🎬 Initializing Event List component');
+
+            // Respect ajax opt-in; if disabled, do not initialize FSM and do not fetch
+            if (!this.config.ajax) {
+                console.log('ℹ️ Event List enhancement disabled (SSR only). Set ajax="true" to enable live updates.');
+                return;
+            }
 
             try {
                 // Check if required dependencies are available
@@ -93,6 +100,11 @@ document.addEventListener('alpine:init', () => {
 
                 // Set up keyboard shortcuts
                 this.setupKeyboardShortcuts();
+
+                // Listen for an external diagnostic trigger
+                document.addEventListener('nhk:loadEvents', () => {
+                    try { this.loadEvents(); } catch (e) { console.warn('Diagnostic loadEvents dispatch failed', e); }
+                });
 
             } catch (error) {
                 console.error('❌ Error initializing Event List component:', error);

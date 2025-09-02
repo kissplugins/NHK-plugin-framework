@@ -229,7 +229,8 @@ class Plugin {
         register_rest_route('nhk-events/v1', '/health', [
             'methods' => 'GET',
             'callback' => [$this, 'get_health_endpoint'],
-            'permission_callback' => 'manage_options'
+            // Health is read-only and safe to expose; keep public to allow diagnostics
+            'permission_callback' => '__return_true'
         ]);
 
         register_rest_route('nhk-events/v1', '/test', [

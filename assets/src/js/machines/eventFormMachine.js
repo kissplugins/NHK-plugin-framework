@@ -54,15 +54,15 @@ export const eventFormMachine = createMachine({
                     actions: assign({
                         formData: (context, event) => ({
                             ...context.formData,
-                            ...event.data
+                            ...(event.output || {})
                         }),
-                        eventId: (context, event) => event.data.id
+                        eventId: (context, event) => (event.output && event.output.id)
                     })
                 },
                 onError: {
                     target: 'error',
                     actions: assign({
-                        error: (context, event) => event.data
+                        error: (context, event) => event.error
                     })
                 }
             }
@@ -91,14 +91,14 @@ export const eventFormMachine = createMachine({
                     actions: assign({
                         isSubmitting: false,
                         isDirty: false,
-                        eventId: (context, event) => event.data.id || context.eventId
+                        eventId: (context, event) => (event.output && event.output.id) || context.eventId
                     })
                 },
                 onError: {
                     target: 'idle',
                     actions: assign({
                         isSubmitting: false,
-                        errors: (context, event) => event.data.errors || {}
+                        errors: (context, event) => (event.error && event.error.errors) || {}
                     })
                 }
             }

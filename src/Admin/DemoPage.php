@@ -113,6 +113,13 @@ class DemoPage {
      * @return void
      */
     public function render_demo_page(): void {
+        // Handle NHK Debug helper toggle
+        if (isset($_POST['nhk_action']) && $_POST['nhk_action'] === 'toggle_nhkdebug' && current_user_can('manage_options')) {
+            check_admin_referer('nhk_toggle_nhkdebug');
+            $enabled = isset($_POST['nhk_event_enable_nhkdebug']) ? (bool) $_POST['nhk_event_enable_nhkdebug'] : false;
+            update_option('nhk_event_enable_nhkdebug', $enabled);
+            echo '<div class="notice notice-success is-dismissible"><p>NHK Debug helper ' . ($enabled ? 'enabled' : 'disabled') . '.</p></div>';
+        }
         ?>
         <div class="wrap">
             <h1><?php echo \esc_html(\get_admin_page_title()); ?></h1>
@@ -122,6 +129,12 @@ class DemoPage {
                     <strong><?php \_e('Welcome to the NHK Event Manager Demo!', 'nhk-event-manager'); ?></strong>
                     <?php \_e('This page demonstrates the modern frontend integration with Alpine.js, XState, and Tailwind CSS.', 'nhk-event-manager'); ?>
                 </p>
+            </div>
+
+            <div id="nhk-api-health" style="display:flex;align-items:center;gap:8px;margin:8px 0;padding:6px 10px;border-radius:4px;background:#f7f7f7;border:1px solid #ddd;">
+                <span style="font-weight:600;">API</span>
+                <span class="nhk-health-dot" style="width:10px;height:10px;border-radius:50%;background:#ffbf00;display:inline-block"></span>
+                <span class="nhk-health-text" style="color:#555;">Checking…</span>
             </div>
             
             <div class="nhk-demo-container" style="background: white; padding: 20px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
@@ -272,6 +285,23 @@ class DemoPage {
                     <li><?php \_e('Sample data is automatically imported on first plugin activation', 'nhk-event-manager'); ?></li>
                     <li><?php \_e('You can modify nhk-events-data-import.json to customize the sample data', 'nhk-event-manager'); ?></li>
                 </ul>
+
+                <hr style="margin: 12px 0;">
+                <h4 style="margin-top:8px;">NHK Debug Helper</h4>
+                <p>Enable a light diagnostic helper (`window.NHKDebug`) and optional autorun after page load.</p>
+                <form method="post">
+                    <?php \wp_nonce_field('nhk_toggle_nhkdebug'); ?>
+                    <input type="hidden" name="nhk_action" value="toggle_nhkdebug" />
+                    <?php $dbg_enabled = (bool) \get_option('nhk_event_enable_nhkdebug', false); ?>
+                    <label>
+                        <input type="checkbox" name="nhk_event_enable_nhkdebug" value="1" <?php echo $dbg_enabled ? 'checked' : ''; ?>>
+                        Enable NHK Debug helper autorun (can also `NHKDebug.run()` in console)
+                    </label>
+                    <p class="submit" style="margin-top:8px;">
+                        <button type="submit" class="button button-primary">Save</button>
+                        <span style="margin-left:8px;color:#666;">Console: <code>NHKDebug.run()</code> or <code>NHKDebug.auto(true)</code></span>
+                    </p>
+                </form>
             </div>
         </div>
         
@@ -279,6 +309,32 @@ class DemoPage {
             // Add some admin-specific JavaScript
             document.addEventListener('DOMContentLoaded', function() {
                 console.log('🎉 NHK Event Manager Admin Demo loaded!');
+
+                // Quick REST route health badge
+                (function() {
+                    const el = document.getElementById('nhk-api-health');
+                    if (!el) return;
+                    const dot = el.querySelector('.nhk-health-dot');
+                    const text = el.querySelector('.nhk-health-text');
+                    const base = (window.nhkEventManagerAdmin && window.nhkEventManagerAdmin.apiUrl) || '/wp-json/nhk-events/v1';
+                    const url = base.replace(/\/$/, '') + '/health';
+                    fetch(url, { credentials: 'same-origin' })
+                        .then(r => r.json().catch(() => ({})))
+                        .then(data => {
+                            if (data && (data.status === 'healthy' || data.success)) {
+                                dot.style.background = '#22c55e';
+                                text.textContent = 'Healthy';
+                            } else {
+                                dot.style.background = '#ef4444';
+                                text.textContent = 'Unhealthy';
+                            }
+                        })
+                        .catch(err => {
+                            console.warn('Health check error', err);
+                            dot.style.background = '#ef4444';
+                            text.textContent = 'Unavailable';
+                        });
+                })();
 
                 // Sample data import functionality
                 const importButton = document.getElementById('import-sample-data');

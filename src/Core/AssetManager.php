@@ -125,6 +125,9 @@ class AssetManager {
             'config' => $this->get_frontend_config(),
         ]);
 
+        // Provide NHKDebug helper (lightweight; autorun controlled via option/localStorage)
+        $this->add_nhk_debug_helper('nhk-event-manager-frontend');
+
         // Add inline styles for critical CSS if needed
         if ($this->should_inline_critical_css()) {
             $this->add_critical_css();
@@ -170,6 +173,74 @@ class AssetManager {
             'strings' => $this->get_admin_localized_strings(),
             'config' => $this->get_admin_config(),
         ]);
+
+        // Provide NHKDebug helper in admin too
+        $this->add_nhk_debug_helper('nhk-event-manager-admin');
+    }
+
+    /**
+     * Injects the NHKDebug helper inline for the given handle.
+     * The helper does nothing unless manually invoked in the console or
+     * when the debug toggle is enabled in settings or localStorage.
+     */
+    protected function add_nhk_debug_helper(string $handle): void {
+        $autorun = (bool) get_option('nhk_event_enable_nhkdebug', false);
+        $script = "(function(){\n"
+            . "if(window.NHKDebug) return;\n"
+            . "window.NHKDebug = {\n"
+            . "  version: '1.0',\n"
+            . "  checkDependencies(){\n"
+            . "    try {\n"
+            . "      console.log({\n"
+            . "        Alpine: typeof window.Alpine,\n"
+            . "        XState: typeof window.XState,\n"
+            . "        NHKFramework: typeof window.NHKFramework,\n"
+            . "        jQuery: typeof window.jQuery,\n"
+            . "        wp: typeof window.wp,\n"
+            . "        nhkEventManager: typeof window.nhkEventManager,\n"
+            . "        nhkEventManagerAdmin: typeof window.nhkEventManagerAdmin\n"
+            . "      });\n"
+            . "    } catch(e) { console.warn('NHKDebug deps error', e); }\n"
+            . "  },\n"
+            . "  listScripts(){\n"
+            . "    try {\n"
+            . "      const rows = Array.from(document.scripts).map(s=>({src:s.src, async:!!s.async, defer:!!s.defer}));\n"
+            . "      console.table(rows);\n"
+            . "      return rows;\n"
+            . "    } catch(e){ console.warn('NHKDebug scripts error', e); }\n"
+            . "  },\n"
+            . "  domProbe(){\n"
+            . "    try {\n"
+            . "      const root=document.getElementById('nhk-event-list-demo');\n"
+            . "      console.log({ rootExists: !!root, hasX: !!(root&&root.__x), xData: root && root.getAttribute ? root.getAttribute('x-data') : undefined });\n"
+            . "      const xd=Array.from(document.querySelectorAll('[x-data]')).slice(0,3).map(el=>el.getAttribute('x-data'));\n"
+            . "      console.log('x-data samples:', xd);\n"
+            . "    } catch(e){ console.warn('NHKDebug dom error', e); }\n"
+            . "  },\n"
+            . "  async restProbe(){\n"
+            . "    try{\n"
+            . "      const base=(window.nhkEventManagerAdmin&&nhkEventManagerAdmin.apiUrl)||(window.nhkEventManager&&nhkEventManager.apiUrl)||'/wp-json/nhk-events/v1';\n"
+            . "      const h=await fetch(base.replace(/\\/$/,'')+'/health',{credentials:'same-origin'}).then(r=>r.json());\n"
+            . "      console.log('REST health', h);\n"
+            . "      const ev=await fetch(base.replace(/\\/$/,'')+'/events?per_page=1',{credentials:'same-origin'}).then(r=>r.json());\n"
+            . "      console.log('REST events sample', ev);\n"
+            . "    }catch(e){ console.warn('NHKDebug rest error', e); }\n"
+            . "  },\n"
+            . "  diagnose(){\n"
+            . "    console.group('NHKDebug diagnose');\n"
+            . "    this.checkDependencies();\n"
+            . "    this.listScripts();\n"
+            . "    this.domProbe();\n"
+            . "    this.restProbe();\n"
+            . "    console.groupEnd();\n"
+            . "  },\n"
+            . "  run(){ this.diagnose(); },\n"
+            . "  auto(flag){ try{ localStorage.setItem('NHK_DEBUG_AUTORUN', flag?'1':'0'); }catch(e){} if(flag) this.schedule(); },\n"
+            . "  schedule(){ setTimeout(()=>{ try{ this.diagnose(); }catch(e){} }, 2000); }\n"
+            . "};\n"
+            . "try{ var autoOpt=" . ($autorun ? 'true' : 'false') . "; var autoLS=localStorage.getItem('NHK_DEBUG_AUTORUN')==='1'; if(autoOpt||autoLS){ window.NHKDebug.schedule(); } }catch(e){}\n"
+            . ")();";
+        wp_add_inline_script($handle, $script, 'after');
     }
     
     /**
