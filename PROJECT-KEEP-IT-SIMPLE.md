@@ -8,6 +8,20 @@ This document serves as a practical checklist for the NHK Event Manager plugin t
 - **Core Features**: Event listing, filtering, basic admin management
 - **Technology Stack**: WordPress core + Alpine.js + XState (minimal) + Tailwind CSS
 
+
+## Agreed Conventions (Project-Specific)
+- Server-side rendering is the default for [nhk_events]; JavaScript is progressive enhancement only
+- Opt-in attribute for enhancements: `ajax="true"`
+- Minimal FSM responsibility: readiness/capabilities only; no data fetching or rendering
+- Loader emits capability signals: `nhk:deps:checking`, `nhk:deps:ready`, `nhk:deps:degraded`, `nhk:api:available`, `nhk:api:unavailable`
+- FSM states: `booting` → `checking` → `ready | degraded`
+- Feature flags set by FSM: `window.nhkFeatures = { liveFilters, instantSearch, bulkActions }`
+
+### Loader/FSM Contract (for implementers)
+- Loader → dispatches DOM events listed above
+- FSM → converts those into capability flags only
+- Components → read `window.nhkFeatures` (and the shortcode `ajax` flag) to decide if live behavior should run
+
 ## Decision Checklist
 
 ### Before Adding Any New Feature/Dependency
@@ -68,15 +82,22 @@ This document serves as a practical checklist for the NHK Event Manager plugin t
 ## Refactoring Guidelines
 
 ### Phase 1: Simplify Current Implementation
-- [ ] Move event listing to server-side rendering in shortcodes
-- [ ] Reduce FSM to app readiness only (boot → ready/degraded)
-- [ ] Ensure all features work without JavaScript
+- [x] Move event listing to server-side rendering in shortcodes
+  - Notes: [nhk_events] now SSRs via WP_Query with GET pagination/filters. JS is optional.
+- [x] Reduce FSM to app readiness only (boot → ready/degraded)
+  - Notes: Introduced appReadyMachine for readiness flags only; no data fetching/rendering.
+- [x] Ensure all features work without JavaScript
+  - Notes: Public pages render lists and navigate via GET; enhancements are opt-in via ajax="true".
 - [ ] Extract shared query logic between REST and PHP rendering
+  - Notes: Planned for Phase 3 to prevent drift between SSR and REST responses.
 
 ### Phase 2: Progressive Enhancement
-- [ ] Add JavaScript enhancements when FSM reports ready
-- [ ] Implement graceful fallbacks for all AJAX features
-- [ ] Add feature flags for optional enhancements
+- [x] Add JavaScript enhancements when FSM reports ready
+  - Notes: Capability loader emits nhk:* signals; FSM sets window.nhkFeatures. Components can consult flags.
+- [x] Implement graceful fallbacks for all AJAX features
+  - Notes: SSR remains the source of truth; without ajax="true" or when degraded, components do not enhance.
+- [x] Add feature flags for optional enhancements
+  - Notes: window.nhkFeatures = { liveFilters, instantSearch, bulkActions } set by FSM; components read-only.
 
 ### Phase 3: Optimize and Clean
 - [ ] Remove unused dependencies and code

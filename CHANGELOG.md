@@ -1,6 +1,17 @@
 # Changelog
 
 ## [1.0.8] - 2025-09-02
+
+## [1.0.9] - 2025-09-02
+### Added
+- Minimal readiness FSM (appReadyMachine) and capability loader emitting nhk:* signals. FSM sets window.nhkFeatures flags and never handles data fetching/rendering.
+
+### Changed
+- index.js wires loader signals to FSM and kicks off checks during init. Components can now consult window.nhkFeatures for enhancements.
+
+### Notes
+- Rebuild assets: `bun run build:js`.
+
 ### Added
 - PROJECT-KEEP-IT-SIMPLE.md: project-specific checklist that prioritizes WordPress-native patterns and progressive enhancement.
 

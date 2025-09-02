@@ -7,6 +7,8 @@
 
 import Alpine from 'alpinejs';
 import { interpret } from 'xstate';
+import appReadyMachine from './machines/appReadyMachine.js';
+import { runCapabilityChecks } from './loader/capabilityLoader.js';
 
 // Import our custom components and machines
 import { eventListMachine } from './machines/eventListMachine.js';
@@ -59,6 +61,19 @@ function initNHKEventManager() {
 
     // Start Alpine.js
     Alpine.start();
+
+    // Initialize minimal readiness FSM and react to loader signals
+    const appService = window.createStateMachine(appReadyMachine);
+    appService.start();
+
+    document.addEventListener('nhk:deps:checking', () => appService.send({ type: 'DEPS_CHECKING' }));
+    document.addEventListener('nhk:deps:ready', () => appService.send({ type: 'DEPS_READY' }));
+    document.addEventListener('nhk:deps:degraded', () => appService.send({ type: 'DEPS_DEGRADED' }));
+    document.addEventListener('nhk:api:available', () => appService.send({ type: 'API_AVAILABLE' }));
+    document.addEventListener('nhk:api:unavailable', () => appService.send({ type: 'API_UNAVAILABLE' }));
+
+    // Kick off capability checks
+    runCapabilityChecks();
 
     // Track initialization completion
     const initTime = performance.now() - initStartTime;

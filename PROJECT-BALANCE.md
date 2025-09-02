@@ -1,17 +1,20 @@
-A Practical Application: Building a Resilient Plugin Framework
+# A Practical Application: Building a Resilient Plugin Framework
+
 This document reframes the concepts from the original PROJECT-BALANCE.md to align with the Phased Architecture & Delivery Guide. Instead of presenting a final, complex framework, it walks through how to build it phase-by-phase, ensuring that a simple, working version is always the foundation.
 
 This approach demonstrates that you can achieve sophistication without sacrificing stability.
 
-Phase 1: The Resilient Foundation (Proof of Concept)
-Goal: Ship a core feature that works 100% of the time, even if all JavaScript fails. This aligns with the principle of starting with the simplest thing that could possibly work.
+## Phase 1: The Resilient Foundation (Proof of Concept)
+
+**Goal:** Ship a core feature that works 100% of the time, even if all JavaScript fails. This aligns with the principle of starting with the simplest thing that could possibly work.
 
 We begin with Progressive Enhancement. The server renders the initial HTML, and JavaScript will only enhance it if and when it becomes available.
 
-1. Server-Side Rendering (The "Always Works" Layer)
+### 1. Server-Side Rendering (The "Always Works" Layer)
 
 This PHP code is our baseline. It fetches data and renders HTML. This is our "minimal vertical slice" for the user-facing feature.
 
+```php
 // PHP side - always works, no JS required
 class EventManagerRenderer {
     public function render_event_list($atts = []) {
@@ -28,11 +31,13 @@ class EventManagerRenderer {
         return $html;
     }
 }
+```
 
-2. Core Client-Side Logic (The Simplest JS Layer)
+### 2. Core Client-Side Logic (The Simplest JS Layer)
 
 This is the most basic version of our client-side manager. It has a single job: fetch data. It has no external dependencies and represents the simplest client-side state.
 
+```javascript
 // Core layer - always works, no external library dependencies
 class EventManagerCore {
     constructor(element) {
@@ -61,16 +66,19 @@ class EventManagerCore {
         // For now, it might do nothing and just rely on the server render.
     }
 }
+```
 
-Exit Criteria for Phase 1: The event list displays correctly on the front-end, rendered by PHP. The core JavaScript class can be instantiated and can fetch data without errors, but it doesn't add any major new functionality yet.
+**Exit Criteria for Phase 1:** The event list displays correctly on the front-end, rendered by PHP. The core JavaScript class can be instantiated and can fetch data without errors, but it doesn't add any major new functionality yet.
 
-Phase 2: Adding Guardrails (Architecture & Reliability)
-Goal: Build a robust initialization system to manage our JavaScript, ensuring it loads reliably and fails gracefully. This is where we add architectural rigor and debugging tools, aligning with "Make it right."
+## Phase 2: Adding Guardrails (Architecture & Reliability)
 
-1. A Robust Initialization System
+**Goal:** Build a robust initialization system to manage our JavaScript, ensuring it loads reliably and fails gracefully. This is where we add architectural rigor and debugging tools, aligning with "Make it right."
+
+### 1. A Robust Initialization System
 
 We create a main framework class responsible for the entire boot sequence. It includes timeouts and error handling from day one, directly applying the "design for recovery" philosophy.
 
+```javascript
 // Main framework initialization
 class NHKFramework {
     constructor() {
@@ -130,11 +138,13 @@ window.addEventListener('DOMContentLoaded', () => {
     window.NHKFramework = new NHKFramework();
     window.NHKFramework.init().catch(console.error);
 });
+```
 
-2. A Testing and Debugging Strategy
+### 2. A Testing and Debugging Strategy
 
 With the architecture in place, we add tests and debug tools to maintain it.
 
+```javascript
 // Integration test that verifies the core stack
 describe('NHK Framework Initialization', () => {
     it('should work without any external dependencies', async () => {
@@ -158,12 +168,15 @@ window.NHKDebug = {
         });
     }
 };
+```
 
-Exit Criteria for Phase 2: The framework reliably initializes the core EventManagerCore module. We have a test suite that proves the basic functionality works, and a debug helper to diagnose issues in production.
+**Exit Criteria for Phase 2:** The framework reliably initializes the core EventManagerCore module. We have a test suite that proves the basic functionality works, and a debug helper to diagnose issues in production.
 
-Phase 3: Hardening & Enhancement (Adding Value)
-Goal: Enhance the user experience by adding an external library (Alpine.js) for interactivity. This is done on top of our stable foundation. This is a "reversible decision" - if Alpine fails to load, the core functionality remains.
+## Phase 3: Hardening & Enhancement (Adding Value)
 
+**Goal:** Enhance the user experience by adding an external library (Alpine.js) for interactivity. This is done on top of our stable foundation. This is a "reversible decision" - if Alpine fails to load, the core functionality remains.
+
+```javascript
 // Enhancement layer - adds Alpine if available
 class EventManagerAlpine extends EventManagerCore {
     enhance() {
@@ -204,16 +217,19 @@ this.modules.set('events', eventManager);
 // After loading dependencies, enhance the modules
 eventManager.enhance(); 
 // ...
+```
 
-Exit Criteria for Phase 3: The event list is now interactive. If Alpine.js fails to load or initialize, the system gracefully degrades to the Phase 1 static list with no errors.
+**Exit Criteria for Phase 3:** The event list is now interactive. If Alpine.js fails to load or initialize, the system gracefully degrades to the Phase 1 static list with no errors.
 
-Phase 4: Scaling with Advanced Tooling
-Goal: Tackle a new, highly complex requirement (e.g., a multi-step booking process) by introducing a more powerful tool (XState). This complexity is now justified by a specific, advanced need.
+## Phase 4: Scaling with Advanced Tooling
 
-1. Advanced Layer for Complex State
+**Goal:** Tackle a new, highly complex requirement (e.g., a multi-step booking process) by introducing a more powerful tool (XState). This complexity is now justified by a specific, advanced need.
+
+### 1. Advanced Layer for Complex State
 
 We extend our class again, only adding the XState machine when the library is present and the module requires it.
 
+```javascript
 // Advanced layer - adds XState for a specific, complex workflow
 class EventManagerAdvanced extends EventManagerAlpine {
     addStateMachine() {
@@ -228,11 +244,13 @@ class EventManagerAdvanced extends EventManagerAlpine {
         });
     }
 }
+```
 
-2. Dependency Injection for Scalability
+### 2. Dependency Injection for Scalability
 
 As we add more modules with different dependencies, a simple loader is no longer enough. We introduce a more formal Dependency Injection system to manage this scaled complexity.
 
+```javascript
 // This loader is introduced when the number of dependencies makes the simple
 // loader in NHKFramework hard to maintain.
 class DependencyLoader {
@@ -260,12 +278,18 @@ class DependencyLoader {
         return this.dependencies.get(name)?.instance;
     }
 }
+```
 
-Exit Criteria for Phase 4: The plugin now supports both simple interactive lists and advanced, state-managed workflows. The dependency loader makes it possible to add future modules without refactoring the core initialization chain.
+**Exit Criteria for Phase 4:** The plugin now supports both simple interactive lists and advanced, state-managed workflows. The dependency loader makes it possible to add future modules without refactoring the core initialization chain.
 
-Key Takeaways
+## Key Takeaways
+
 This phased approach ensures that:
-A Working Product Exists at Every Stage: The core functionality delivered in Phase 1 is never broken.
-Complexity is Justified: We didn't add Alpine or XState because they are "modern," but because we had specific UX and state management problems to solve in Phases 3 and 4.
-The System is Resilient: By building on a simple core and adding layers with graceful degradation, the application is robust against network failures, script blockers, and dependency conflicts.
-The Architecture Serves the Need: The architecture evolves from a simple class to a more sophisticated framework as the project's requirements grow, not before.
+
+**A Working Product Exists at Every Stage:** The core functionality delivered in Phase 1 is never broken.
+
+**Complexity is Justified:** We didn't add Alpine or XState because they are "modern," but because we had specific UX and state management problems to solve in Phases 3 and 4.
+
+**The System is Resilient:** By building on a simple core and adding layers with graceful degradation, the application is robust against network failures, script blockers, and dependency conflicts.
+
+**The Architecture Serves the Need:** The architecture evolves from a simple class to a more sophisticated framework as the project's requirements grow, not before.
